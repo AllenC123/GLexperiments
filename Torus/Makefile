@@ -82,7 +82,7 @@ clean:
 # which is why we've appended '|| true'; it ensures the exit-code is always 0, suppressing those messages
 #
 # 'rm' (even without verbose) will also print it's own additional error-messages: 
-# 		'rm: cannot remove 'fluidsym_dbg': No such file or directory'
+# 		'rm: cannot remove 'examplefile_dbg': No such file or directory'
 # so we pipe to '/dev/null' to suppress that as well
 
 .PHONY: reallyclean
