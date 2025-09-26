@@ -8,23 +8,25 @@
 //#include <cmath>
 
 
-GLfloat rotation_angle = 0.0;
-GLfloat rotation_delta = 0.2;
+GLdouble rotation_angle = 0.0;
+GLdouble rotation_delta = 0.2;
 
 void Display()
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     
     glLoadIdentity();
-    glRotatef(rotation_angle, 0.0f, 0.0f, 1.0f);
+    glTranslated(-1, -1, 0);
+    glRotated(5.0, 2.5, -2.5, 1.0);
+    glRotated(rotation_angle, 0.0, 0.0, 1.0);
     
     //gluLookAt(0, 0, 1, 0, 0, 0, 1, 0, 0);
     //glTranslated(0.9, 0.9, 0.9); //better method
     
-    glColor3f(1.0f, 0.0f, 1.0f);
-    double radius{1.0}; double height{25.0}; GLint slices{32}; GLint stacks{32};
-    glutWireSphere(radius, slices, stacks);
-    //glutWireCylinder(radius, height, slices, stacks);
+    glColor3f(0.0f, 1.0f, 1.0f);
+    double radius{1.0}; double height{256.0}; GLint slices{64}; GLint stacks{64};
+    //glutWireSphere(radius, slices, stacks);
+    glutWireCylinder(radius, -height, slices, stacks);
     //glutSolidCylinder(radius, height, slices, stacks);
     
     glutSwapBuffers();
@@ -51,8 +53,8 @@ void InitializeGL()
     glBlendFunc(GL_SRC_COLOR, GL_ONE_MINUS_DST_COLOR);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    gluPerspective(10.0, 1.0, 0.0, 255.0);
-    gluLookAt(0.0, 0.0, 20.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+    gluPerspective(10.0, 1.0, 0.0, 256.0);
+    gluLookAt(0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
     glMatrixMode(GL_MODELVIEW);
 }
 
