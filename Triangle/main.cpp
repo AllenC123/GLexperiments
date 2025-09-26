@@ -1,11 +1,4 @@
-// glfw3 header includes the OpenGL header from your development environment by default,
-// but on some platforms this only supports older versions of OpenGL.
-// Most programs use an extension loader library instead (glad)
-// In which case it needs to be included first
-
-#define GLAD_GL_IMPLEMENTATION
-#include "glad/gl.h"
-#define GLFW_INCLUDE_NONE // redundant; explicitly disabling inclusion of the development environment's header.
+#define GL_GLEXT_PROTOTYPES // must be defined to enable shader-related functions (glUseProgram)
 #include <GLFW/glfw3.h>
 
 #include "ShaderLoading.hpp"
@@ -29,20 +22,19 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
 
 int main()
 {
-    glfwSetErrorCallback(error_callback);
+    glfwSetErrorCallback(error_callback); // safe to call before glfwInit
     
-    if (!glfwInit()) exit(EXIT_FAILURE);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    if(!glfwInit()) return 1;
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     
-    GLFWwindow* window = glfwCreateWindow(640, 480, "OpenGL Triangle", NULL, NULL);
-    if (!window) { glfwTerminate(); exit(EXIT_FAILURE); }
+    int win_width{640}, win_height{480}; float ratio{640.f/480.f}; // updated inside frameloop
+    GLFWwindow* window = glfwCreateWindow(win_width, win_height, "OpenGL Triangle", NULL, NULL);
+    if (!window) { glfwTerminate(); return 2; }
     
     glfwSetKeyCallback(window, key_callback);
-    
     glfwMakeContextCurrent(window);
-    gladLoadGL(glfwGetProcAddress);
     glfwSwapInterval(1);
     
     // NOTE: OpenGL error checks have been omitted for brevity
@@ -67,17 +59,19 @@ int main()
     
     while (!glfwWindowShouldClose(window))
     {
-        int width, height;
-        glfwGetFramebufferSize(window, &width, &height);
-        const float ratio = width / (float) height;
-        
-        glViewport(0, 0, width, height);
         glClear(GL_COLOR_BUFFER_BIT);
+        
+        // scaling / recentering the triangle to fit window-size
+        glfwGetFramebufferSize(window, &win_width, &win_height);
+        const float ratio{float(win_width) / float(win_height)}; // preserves aspect-ratio during resize
+        // when this whole block is disabled, resizing the window never scales or recenters the triangle
+        // when only the viewport-size is updated, resizing the window scales and stretches the triangle
+        glViewport(0, 0, win_width, win_height);
         
         mat4x4 m, p, mvp;
         mat4x4_identity(m);
-        mat4x4_rotate_Z(m, m, (float) glfwGetTime());
-        mat4x4_ortho(p, -ratio, ratio, -1.f, 1.f, 1.f, -1.f);
+        mat4x4_rotate_Z(m, m, glfwGetTime());
+        mat4x4_ortho(p, ratio, -ratio, -1.f, 1.f, 1.f, -1.f); // flipping signs on the 'ratio' reverses spin-direction
         mat4x4_mul(mvp, p, m);
         
         glUseProgram(shader_program);
@@ -92,5 +86,5 @@ int main()
     glfwDestroyWindow(window);
     
     glfwTerminate();
-    exit(EXIT_SUCCESS);
+    return 0;
 }

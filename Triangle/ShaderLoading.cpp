@@ -29,7 +29,10 @@ std::string LoadShader(std::string shader_name)
     return std::string{shader_text.str()};
 }
 
-#include "glad/gl.h"
+
+#define GL_GLEXT_PROTOTYPES // must be defined for shader-related functions (glCreateShader, glCompileShader, etc)
+#include <GL/gl.h>
+
 GLuint CompileShaders()
 {
     static const std::string vert_shader_str{LoadShader("test.vert")};
