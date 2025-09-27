@@ -3,6 +3,7 @@ MAKEFLAGS += -j
 CXX = g++
 CXXFLAGS := -std=c++23 -O3 -pipe -Wall -Wextra -Wpedantic -Wfatal-errors
 CXXFLAGS += -Wno-unused-parameter -Wno-unused-variable
+#CXXFLAGS += -DPRESERVE_ASPECT_RATIO
 LDFLAGS := -lGL -lglfw
 
 target_executable := triangle
