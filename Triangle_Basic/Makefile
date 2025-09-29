@@ -9,6 +9,9 @@ CXXFLAGS += -Wno-unused-parameter
 LINKFLAGS := -lGL -lglfw
 WARNFLAGS := -Wall -Wextra -Wpedantic -Wfatal-errors
 
+# completely disables shaders; shader-related functions and variables will not be compiled
+#CXXFLAGS += -DDISABLE_SHADERS
+
 # build directories
 OBJECTFILE_DIR := build/objects
 DEPFILE_SUBDIR := build/depfile
