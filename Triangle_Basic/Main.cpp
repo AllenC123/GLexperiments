@@ -8,11 +8,38 @@
 #include "VertexT.hpp"
 #include "ShaderLoading.hpp"
 
+
+bool shader_toggled{false}; // shader was just toggled on/off
 bool enable_shaders{true}; bool render_with_glDrawArray{true};
 static void error_callback(int error, const char* description) { fprintf(stderr, "Error (%d): %s\n", error, description); }
-static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-  if((key == GLFW_KEY_ESCAPE) && (action == GLFW_PRESS)) glfwSetWindowShouldClose(window, GLFW_TRUE);
+static void key_callback(GLFWwindow* window, int key, int scancode [[maybe_unused]], int action, int mods [[maybe_unused]])
+{ if (action != GLFW_PRESS) return;
+  switch(key)
+  {
+    case GLFW_KEY_Q:
+    case GLFW_KEY_ESCAPE:
+        glfwSetWindowShouldClose(window, GLFW_TRUE);
+    return;
+    
+    case GLFW_KEY_SPACE:
+    {
+      #ifndef DISABLE_SHADERS
+      if(mods& GLFW_MOD_SHIFT) {
+        shader_toggled = true;
+        enable_shaders = !enable_shaders;
+      } else
+      #endif
+      render_with_glDrawArray = !render_with_glDrawArray;
+      std::cout << std::format("rendering-method: {} [shaders {}]\n",
+        (render_with_glDrawArray?"'glDrawArray'":"'OpenGL' (manual vertex drawing)"),
+        (SHADERS_COMPILED? (enable_shaders? "enabled" : "disabled") : "unavailable")
+      );
+    } return;
+    
+    default: return;
+  }
 }
+
 
 int main(int argc, char** argv)
 {
@@ -20,19 +47,27 @@ int main(int argc, char** argv)
     { // parsing commandline arguments
       std::string arg{argv[C]}; bool known{false};
       std::cout << std::format("arg[#{}]: '{}'\n", C, arg);
-      if (arg.starts_with("--rendering")) { render_with_glDrawArray = enable_shaders = false; known = true; } // TODO: actually parse "--rendering=[...]"
+      if (arg.starts_with("--cpurender")) { render_with_glDrawArray = enable_shaders = false; known = true; } // TODO: actually parse "--rendering=[...]"
+      if (arg.starts_with("--drawarray")) { enable_shaders = false; render_with_glDrawArray = known = true; } // drawing with shaders is already default
       if (arg.starts_with("--noshaders") // TODO: actually parse "--shaders=[...]" (allowing selection of alternate shaders, or 'none')
       || (arg == ("--disable-shaders"))) { enable_shaders = false; known = true; }
       if ((!known) || (arg == "--help")) {
       if (arg != "--help") std::cerr << std::format("[ERROR] unrecognized argument: '{}'\n", arg);
-        typedef std::array<std::string, 2> UsageString; std::array<UsageString, 3> OptionStrings {
-          UsageString{"--rendering", "switch to manual vertex-rendering (shaders cannot be used)"},
+        typedef std::array<std::string, 2> UsageString; std::array<UsageString, 4> OptionStrings {
+          UsageString{"--cpurender", "switch to manual vertex-rendering (shaders cannot be used)"},
+          UsageString{"--drawarray", "sets rendering-method 'glDrawArray' (and disables shaders)"},
           UsageString{"--noshaders", "disables shaders (loading skipped; not compiled or linked)"},
           UsageString{"--disable-shaders", "alias of '--noshaders'"},
         }; std::cerr << "available options:\n";
         for (const auto& [option, description]: OptionStrings) {
           std::cerr << std::format(" {}: {}\n", option, description);
-        } std::cerr << '\n'; return C;
+        } std::cerr << '\n';
+        if (arg == "--help") {
+          std::cerr << "Escape/Q terminates the program\n";
+          std::cerr << "Spacebar toggles rendering-method [cpu-render / glDrawArray]\n";
+          std::cerr << "Shift + Spacebar toggles shaders on/off\n\n";
+        }
+        return C;
       }
     }
     
@@ -43,7 +78,7 @@ int main(int argc, char** argv)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
     
-    int win_width{640}, win_height{640}; // updated inside frameloop
+    int win_width{1080}, win_height{1080}; // updated inside frameloop
     GLFWwindow* window = glfwCreateWindow(win_width, win_height, "OpenGL Triangle", NULL, NULL);
     if (!window) { glfwTerminate(); return 2; }
     
@@ -67,22 +102,24 @@ int main(int argc, char** argv)
     // manual vertex-data rendering only requires 'glEnableClientState' calls.
     glEnableClientState(GL_VERTEX_ARRAY); glEnableClientState(GL_COLOR_ARRAY);
     glVertexPointer(3,GL_FLOAT, sizeof(VertexT), vertex_list[0].coord.data());
-    glColorPointer(3, GL_FLOAT, sizeof(VertexT), vertex_list[0].color.data());
+    glColorPointer (3,GL_FLOAT, sizeof(VertexT), vertex_list[0].color.data());
     // pointers are required to call 'glDrawArrays' - not for manual-rendering
-    // enabling shaders breaks manual-rendering and segfaults on 'ClientState'
     
+    GLuint shader_program{};
     if (enable_shaders)
     {
       #ifndef DISABLE_SHADERS
       render_with_glDrawArray = true; std::cout << "rendering-method:'glDrawArrays' [shaders enabled]\n";
       GLuint gl_vertex_array; glGenVertexArrays(1, &gl_vertex_array); glBindVertexArray(gl_vertex_array);
       GLuint vertex_buffer; glGenBuffers(1,&vertex_buffer); glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-      glNamedBufferData(vertex_buffer, sizeof(vertex_list), vertex_list.data(), GL_STATIC_DRAW);
+      glNamedBufferData(vertex_buffer, sizeof(vertex_list), vertex_list[0].coord.data(), GL_STATIC_DRAW);
+      //glBufferData(vertex_buffer, sizeof(vertex_list), vertex_list.data(), GL_STATIC_DRAW);
       
       int vertex_attributes_max; glGetIntegerv(GL_MAX_VERTEX_ATTRIBS, &vertex_attributes_max);
       std::cout << "[OpenGL] maximum vertex-attributes supported: " << vertex_attributes_max << "\n\n";
       
-      const GLuint shader_program = CompileShaders();
+      shader_program = CompileShaders();
+      //const GLuint shader_program = CompileShaders();
       if (!ValidateShaderProgram(shader_program)) {
           std::cerr << "shader validation failed\n";
           glfwDestroyWindow(window);
@@ -122,8 +159,9 @@ int main(int argc, char** argv)
         glfwGetFramebufferSize(window, &win_width, &win_height);
         glViewport(0, 0, win_width, win_height);
         
+        // ~50% chance 'glDrawArray' renders nothing when shaders are disabled (determined at program-startup)
         if (render_with_glDrawArray) { glDrawArrays(GL_TRIANGLES, 0, vertex_list.size()); }
-        else { glBegin(GL_TRIANGLES); // rendering vertices manually (cannot use shaders)
+        else { glBegin(GL_LINE_LOOP); // rendering vertices manually (cannot use shaders)
           for (const VertexT& vertex: vertex_list) {
             glColor3fv (vertex.color.data());
             glVertex3fv(vertex.coord.data());
@@ -132,6 +170,16 @@ int main(int argc, char** argv)
         
         glfwSwapBuffers(window);
         glfwPollEvents();
+        if (SHADERS_COMPILED && shader_toggled)
+        { if (enable_shaders) { glUseProgram(shader_program); }
+          else { glUseProgram(0); // reset
+            if (render_with_glDrawArray) {
+              glVertexPointer(3, GL_FLOAT, sizeof(VertexT), vertex_list[0].coord.data());
+              glColorPointer (3, GL_FLOAT, sizeof(VertexT), vertex_list[0].color.data());
+            } glEnableClientState(GL_VERTEX_ARRAY); glEnableClientState(GL_COLOR_ARRAY);
+          }
+          shader_toggled = false;
+        }
     }
     
     glfwDestroyWindow(window);

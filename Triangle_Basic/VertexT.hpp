@@ -4,13 +4,16 @@
 #include <array>
 #include <string>
 
+// definition in gl.h
+typedef float GLfloat;
+
 struct VertexT
 {
-    std::array<float, 3> coord;
-    std::array<float, 3> color;
+    std::array<GLfloat,3> coord;
+    std::array<GLfloat,3> color;
     std::string Representation() const; // "[XYZ](#RRGGBB)"
     VertexT(float pos[2], float col[3])
-    : coord{pos[0], pos[1], 0.000f},
+    : coord{pos[0], pos[1], 1.000f}, // somehow the Z-coord changes the glDrawArray color?!!?? 0 gives an ugly green/yellow
       color{col[0], col[1], col[2]}
     { ; }
 };

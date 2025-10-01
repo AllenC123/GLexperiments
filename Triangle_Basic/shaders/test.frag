@@ -6,5 +6,6 @@ out vec4 fragment;
 void main()
 {
     //fragment = vec4(color, 1.0f);
-    fragment = vec4(color.r, 0.0f, color.b, 1.0f);
+    //fragment = vec4(color.r, 0.0f, color.b, 1.0f);
+    fragment = vec4(color.b, color.g, color.r, 1.0f);
 }

@@ -4,8 +4,7 @@ MAKEFLAGS += -j --no-builtin-rules --no-builtin-variables --warn-undefined-varia
 target_executable := triangle
 
 CXX := g++
-CXXFLAGS := -std=c++23 -O2 -pipe
-CXXFLAGS += -Wno-unused-parameter
+CXXFLAGS := -std=c++23 -pipe
 LINKFLAGS := -lGL -lglfw
 WARNFLAGS := -Wall -Wextra -Wpedantic -Wfatal-errors
 
