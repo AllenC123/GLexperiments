@@ -40,6 +40,41 @@ static void key_callback(GLFWwindow* window, int key, int scancode [[maybe_unuse
   }
 }
 
+#ifndef DISABLE_SHADERS
+GLuint ActivateShaders(const auto& vertex_list)
+{
+  const GLuint shader_program = CompileShaders();
+  if (!ValidateShaderProgram(shader_program)) {
+      std::cerr << "shader validation failed\n";
+      glfwTerminate(); exit(3);
+  }
+  else glUseProgram(shader_program);
+  bool attributeLookupFailed{false};
+  const GLint vertex_coord_location{glGetAttribLocation(shader_program, "vertex_coord")};
+  const GLint vertex_color_location{glGetAttribLocation(shader_program, "vertex_color")};
+  
+  // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glGetAttribLocation.xhtml
+  //If the named attribute is not an active attribute in the specified program object,
+  //  or if the name starts with the reserved prefix "gl_", a value of -1 is returned.
+  if (vertex_coord_location == -1) { std::cerr << "shader attribute-lookup failed for: 'vertex_coord'\n"; attributeLookupFailed = true; }
+  if (vertex_color_location == -1) { std::cerr << "shader attribute-lookup failed for: 'vertex_color'\n"; attributeLookupFailed = true; }
+  if (attributeLookupFailed) { glfwTerminate(); exit(4); }
+  
+  GLuint gl_vertex_array; glGenVertexArrays(1, &gl_vertex_array); glBindVertexArray(gl_vertex_array);
+  GLuint vertex_buffer; glGenBuffers(1,&vertex_buffer); glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+  glNamedBufferData(vertex_buffer, sizeof(vertex_list), vertex_list[0].coord.data(), GL_STATIC_DRAW);
+  //glNamedBufferData(vertex_buffer, sizeof(vertex_list), vertex_list.data(), GL_STATIC_DRAW);
+  //'glBufferData' doesn't work anymore?? only 'glNamedBuffer'
+  
+  glEnableVertexArrayAttrib(gl_vertex_array, vertex_coord_location);
+  glEnableVertexArrayAttrib(gl_vertex_array, vertex_color_location);
+  glVertexAttribPointer(vertex_coord_location, 3, GL_FLOAT, GL_TRUE, sizeof(VertexT), (void*) offsetof(VertexT, coord));
+  glVertexAttribPointer(vertex_color_location, 3, GL_FLOAT, GL_TRUE, sizeof(VertexT), (void*) offsetof(VertexT, color));
+  // these ^ function-calls describe the data-layout of the data in 'GL_ARRAY_BUFFER'
+  
+  return shader_program;
+}
+#endif
 
 int main(int argc, char** argv)
 {
@@ -81,10 +116,12 @@ int main(int argc, char** argv)
     int win_width{1080}, win_height{1080}; // updated inside frameloop
     GLFWwindow* window = glfwCreateWindow(win_width, win_height, "OpenGL Triangle", NULL, NULL);
     if (!window) { glfwTerminate(); return 2; }
-    
     glfwSetKeyCallback(window, key_callback);
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
+    
+    int vertex_attributes_max; glGetIntegerv(GL_MAX_VERTEX_ATTRIBS, &vertex_attributes_max);
+    std::cout << "[OpenGL] maximum vertex-attributes supported: " << vertex_attributes_max << "\n\n";
     
     const std::array<VertexT, 3> vertex_list {
       VERTEX({-0.75f, 0.67f}, {1.f, 0.f, 0.f}),
@@ -105,47 +142,13 @@ int main(int argc, char** argv)
     glColorPointer (3,GL_FLOAT, sizeof(VertexT), vertex_list[0].color.data());
     // pointers are required to call 'glDrawArrays' - not for manual-rendering
     
-    GLuint shader_program{};
-    if (enable_shaders)
-    {
-      #ifndef DISABLE_SHADERS
-      render_with_glDrawArray = true; std::cout << "rendering-method:'glDrawArrays' [shaders enabled]\n";
-      GLuint gl_vertex_array; glGenVertexArrays(1, &gl_vertex_array); glBindVertexArray(gl_vertex_array);
-      GLuint vertex_buffer; glGenBuffers(1,&vertex_buffer); glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-      glNamedBufferData(vertex_buffer, sizeof(vertex_list), vertex_list[0].coord.data(), GL_STATIC_DRAW);
-      //glBufferData(vertex_buffer, sizeof(vertex_list), vertex_list.data(), GL_STATIC_DRAW);
-      
-      int vertex_attributes_max; glGetIntegerv(GL_MAX_VERTEX_ATTRIBS, &vertex_attributes_max);
-      std::cout << "[OpenGL] maximum vertex-attributes supported: " << vertex_attributes_max << "\n\n";
-      
-      shader_program = CompileShaders();
-      //const GLuint shader_program = CompileShaders();
-      if (!ValidateShaderProgram(shader_program)) {
-          std::cerr << "shader validation failed\n";
-          glfwDestroyWindow(window);
-          glfwTerminate(); return 3;
-      }
-      else glUseProgram(shader_program);
-      bool attributeLookupFailed{false};
-      const GLint vertex_coord_location{glGetAttribLocation(shader_program, "vertex_coord")};
-      const GLint vertex_color_location{glGetAttribLocation(shader_program, "vertex_color")};
-      
-      // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glGetAttribLocation.xhtml
-      //If the named attribute is not an active attribute in the specified program object,
-      //  or if the name starts with the reserved prefix "gl_", a value of -1 is returned.
-      if (vertex_coord_location == -1) { std::cerr << "shader attribute-lookup failed for: 'vertex_coord'\n"; attributeLookupFailed = true; }
-      if (vertex_color_location == -1) { std::cerr << "shader attribute-lookup failed for: 'vertex_color'\n"; attributeLookupFailed = true; }
-      if (attributeLookupFailed) { glfwDestroyWindow(window); glfwTerminate(); return 4; }
-      
-      glEnableVertexArrayAttrib(gl_vertex_array, vertex_coord_location);
-      glEnableVertexArrayAttrib(gl_vertex_array, vertex_color_location);
-      glVertexAttribPointer(vertex_coord_location, 3, GL_FLOAT, GL_TRUE, sizeof(VertexT), (void*) offsetof(VertexT, coord));
-      glVertexAttribPointer(vertex_color_location, 3, GL_FLOAT, GL_TRUE, sizeof(VertexT), (void*) offsetof(VertexT, color));
-      // these ^ function-calls associate the currently-active 'GL_ARRAY_BUFFER' with the current 'GL_VERTEX_ARRAY'
+    #ifndef DISABLE_SHADERS
+    if (enable_shaders) {
+        ActivateShaders(vertex_list);
     } else if (render_with_glDrawArray) { std::cout << "rendering-method: 'glDrawArrays' [shaders are disabled]\n";
     } else { std::cout << "rendering-method: OpenGL (manually drawing vertex-data) [shaders are disabled]\n"; }
      #else
-    std::cerr << "[WARN] shaders cannot be enabled (program was compiled with 'DISABLE_SHADERS' flag set)\n";
+    std::cerr << "[WARN] shaders cannot be enabled (program was compiled with 'DISABLE_SHADERS' flag set)\n"; {
     } if (render_with_glDrawArray) { std::cout << "rendering-method: 'glDrawArrays' [shaders unavailable]\n"; }
     else { std::cout << "rendering-method: OpenGL (manually rendering vertex-array) [shaders unavailable]\n"; }
     #endif
@@ -170,8 +173,9 @@ int main(int argc, char** argv)
         
         glfwSwapBuffers(window);
         glfwPollEvents();
+        #ifndef DISABLE_SHADERS
         if (SHADERS_COMPILED && shader_toggled)
-        { if (enable_shaders) { glUseProgram(shader_program); }
+        { if (enable_shaders) { ActivateShaders(vertex_list); }
           else { glUseProgram(0); // reset
             if (render_with_glDrawArray) {
               glVertexPointer(3, GL_FLOAT, sizeof(VertexT), vertex_list[0].coord.data());
@@ -180,6 +184,7 @@ int main(int argc, char** argv)
           }
           shader_toggled = false;
         }
+        #endif
     }
     
     glfwDestroyWindow(window);

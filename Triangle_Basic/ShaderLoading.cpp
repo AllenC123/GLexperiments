@@ -50,11 +50,16 @@ GLuint CompileShaders()
     glShaderSource(fragment_shader, 1, &frag_shader_cstring, nullptr);
     glCompileShader(fragment_shader);
     
-    const GLuint program = glCreateProgram();
-    glAttachShader(program, vertex_shader);
-    glAttachShader(program, fragment_shader);
-    glLinkProgram(program);
-    return program;
+    const GLuint shader_program = glCreateProgram();
+    glAttachShader(shader_program, fragment_shader);
+    glAttachShader(shader_program, vertex_shader);
+    glLinkProgram(shader_program);
+    
+    // after linking these can be deleted
+    glDeleteShader(vertex_shader); glDeleteShader(fragment_shader);
+    // the compiled shader-objects are left in GPU memory otherwise
+    
+    return shader_program;
 }
 
 bool ValidateShaderProgram(GLuint program)
