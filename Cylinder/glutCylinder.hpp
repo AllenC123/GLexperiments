@@ -15,4 +15,7 @@ void fghDrawGeometryWire(GLfloat *vertices, GLfloat *normals, GLsizei numVertice
   GLushort *vertIdxs2, GLsizei numParts2, GLsizei numVertPerPart2
 );
 
+void fghCircleTable(GLfloat **sint, GLfloat **cost, const int n, const GLboolean halfCircle);
+void PrintCylinder();
+
 #endif

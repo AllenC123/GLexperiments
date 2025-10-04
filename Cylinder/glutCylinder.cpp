@@ -657,7 +657,7 @@ void fghDrawGeometryWire(GLfloat *vertices, GLfloat *normals, GLsizei numVertice
                               vertIdxs2, numParts2, numVertPerPart2);
 }
 
-static void fghCircleTable(GLfloat **sint, GLfloat **cost, const int n, const GLboolean halfCircle)
+void fghCircleTable(GLfloat **sint, GLfloat **cost, const int n, const GLboolean halfCircle)
 {
     int i;
 
@@ -930,4 +930,134 @@ int fghCylinder(
     //free(vertices);
     //free(normals);
     return nVert;
+}
+
+#include <iostream>
+//#include <format>
+void PrintCylinder()
+{
+    GLfloat* vertices; GLfloat* normals; GLushort* sliceIdx; GLushort* stackIdx;
+    double radius{1.0}; double height{-256.0}; GLint slices{64}; GLint stacks{64};
+    int i,j,idx{0}; // idx into vertex/normal buffer
+    
+    GLfloat radf = (GLfloat)radius; GLfloat z;
+    const GLfloat zStep = (GLfloat)height / ( ( stacks > 0 ) ? stacks : 1 ); // Step in z as stacks are drawn.
+    GLfloat *sint,*cost; // Pre-computed circle
+    fghCircleTable(&sint,&cost,-slices,GL_FALSE);
+    
+    int nVert{slices*(stacks+3)+2}; // need two extra stacks for closing off top and bottom with correct normals
+    // Note, (stacks+1)*slices vertices for side of object, 2*slices+2 for top and bottom closures
+    //fghGenerateCylinder(radius,-height,slices,stacks,&vertices,&normals,&nVert);
+    vertices = (GLfloat*)malloc(nVert*3*sizeof(GLfloat));
+    normals  = (GLfloat*)malloc(nVert*3*sizeof(GLfloat));
+    
+    z=0; // top on Z-axis
+    vertices[0] =  0.f;
+    vertices[1] =  0.f;
+    vertices[2] =  0.f;
+    normals[0] =  0.f;
+    normals[1] =  0.f;
+    normals[2] = -1.f;
+    idx = 3;
+    // other on top (get normals right)
+    for (j=0; j<slices; j++, idx+=3)
+    {
+        vertices[idx  ] = cost[j]*radf;
+        vertices[idx+1] = sint[j]*radf;
+        vertices[idx+2] = z;
+        normals[idx  ] = 0.f;
+        normals[idx+1] = 0.f;
+        normals[idx+2] = -1.f;
+    }
+    
+    // each stack
+    for (i=0; i<stacks+1; i++ )
+    {
+        for (j=0; j<slices; j++, idx+=3)
+        {
+            vertices[idx  ] = cost[j]*radf;
+            vertices[idx+1] = sint[j]*radf;
+            vertices[idx+2] = z;
+            normals[idx  ] = cost[j];
+            normals[idx+1] = sint[j];
+            normals[idx+2] = 0.f;
+        }
+
+        z += zStep;
+    }
+    
+    z -= zStep;
+    // other on bottom (get normals right)
+    for (j=0; j<slices; j++, idx+=3)
+    {
+        vertices[idx  ] = cost[j]*radf;
+        vertices[idx+1] = sint[j]*radf;
+        vertices[idx+2] = z;
+        normals[idx  ] = 0.f;
+        normals[idx+1] = 0.f;
+        normals[idx+2] = 1.f;
+    }
+    
+    // bottom
+    vertices[idx  ] =  0.f;
+    vertices[idx+1] =  0.f;
+    vertices[idx+2] =  height;
+    normals[idx  ] =  0.f;
+    normals[idx+1] =  0.f;
+    normals[idx+2] =  1.f;
+    
+    // Release sin and cos tables
+    free(sint);
+    free(cost);
+    
+    std::cout << "nVert: " << nVert << " x3: " << (nVert*3) << '\n';
+    std::cout << "last vertex/normal idx: " << idx << '\n';
+    
+    // _____________________________________________________________//
+    // fghCylinder                                                  //
+    // _____________________________________________________________//
+    stackIdx = (GLushort*)malloc(slices*(stacks+1)*sizeof(GLushort));
+    sliceIdx = (GLushort*)malloc(slices*2         *sizeof(GLushort));
+    for (i=0,idx=0; i<stacks+1; i++) // generate for each stack
+    {
+        GLushort offset = 1+(i+1)*slices; // start at 1 (0 is top vertex), and we advance one stack down as we go along
+        for (j=0; j<slices; j++, idx++)
+        {
+            stackIdx[idx] = offset+j;
+        }
+    }
+    std::cout << "last stackIdx: " << idx << '\n';
+    std::cout << "calc stackMax: " << (slices*(stacks+1)) << '\n';
+    for (i=0,idx=0; i<slices; i++) // generate for each slice
+    {
+        GLushort offset = 1+i; // start at 1 (0 is top vertex), and we advance one slice as we go along
+        sliceIdx[idx++] = offset+slices;
+        sliceIdx[idx++] = offset+(stacks+1)*slices;
+    }
+    std::cout << "last sliceIdx: " << idx << '\n';
+    std::cout << "calc sliceMax: " << (slices*2) << '\n';
+    
+    /*std::cout << "\nvertices:";
+    for (int V{0}; V < (nVert*3); ++V) {
+        if ((V%3) == 0) std::cout << "\n";
+        std::cout << vertices[V] << ' ';
+    }
+    std::cout << "\nnormals:";
+    for (int V{0}; V < (nVert*3); ++V) {
+        if ((V%3) == 0) std::cout << "\n";
+        std::cout << normals[V] << ' ';
+    }*/
+    std::cout << "\nstacks:";
+    for (int V{0}; V < 128; ++V) { // (slices*(stacks+1))
+        if ((V%3) == 0) std::cout << "\n";
+        std::cout << stackIdx[V] << ' ';
+    }
+    std::cout << "\nslices:";
+    for (int V{0}; V < 128; ++V) { // (slices*2)
+        if ((V%3) == 0) std::cout << "\n";
+        std::cout << sliceIdx[V] << ' ';
+    }
+    std::cout << "\n\n";
+    free(vertices); free(normals); free(stackIdx); free(sliceIdx);
+    return;
 }

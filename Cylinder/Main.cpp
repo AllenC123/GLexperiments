@@ -99,27 +99,100 @@ void Display_()
     
     glColor4f(0.0f, 1.0f, 1.0f, 1.0f);
     GLfloat* vertices; GLfloat* normals; GLushort* sliceIdx; GLushort* stackIdx;
-    double radius{1.0}; double height{256.0}; GLint slices{64}; GLint stacks{64};
-    int i,j,idx,nVert;
+    double radius{1.0}; double height{-256.0}; GLint slices{64}; GLint stacks{64};
     // why doesn't this work?????????
     /*int nVert = fghCylinder(
         radius, -height, slices, stacks, GL_TRUE,
         vertices, normals, sliceIdx, stackIdx
     );*/
-    fghGenerateCylinder(radius,-height,slices,stacks,&vertices,&normals,&nVert);
+    
+    int i,j,idx{0}; // idx into vertex/normal buffer
+    GLfloat radf = (GLfloat)radius; GLfloat z;
+    const GLfloat zStep = (GLfloat)height / ( ( stacks > 0 ) ? stacks : 1 ); // Step in z as stacks are drawn.
+    GLfloat *sint,*cost; // Pre-computed circle
+    fghCircleTable(&sint,&cost,-slices,GL_FALSE);
+    
+    int nVert{slices*(stacks+3)+2}; // need two extra stacks for closing off top and bottom with correct normals
+    // Note, (stacks+1)*slices vertices for side of object, 2*slices+2 for top and bottom closures
+    //fghGenerateCylinder(radius,-height,slices,stacks,&vertices,&normals,&nVert);
+    vertices = (GLfloat*)malloc((nVert)*3*sizeof(GLfloat));
+    normals  = (GLfloat*)malloc((nVert)*3*sizeof(GLfloat));
+    
+    z=0; // top on Z-axis
+    vertices[0] =  0.f;
+    vertices[1] =  0.f;
+    vertices[2] =  0.f;
+    normals[0] =  0.f;
+    normals[1] =  0.f;
+    normals[2] = -1.f;
+    idx = 3;
+    // other on top (get normals right)
+    for (j=0; j<slices; j++, idx+=3)
+    {
+        vertices[idx  ] = cost[j]*radf;
+        vertices[idx+1] = sint[j]*radf;
+        vertices[idx+2] = z;
+        normals[idx  ] = 0.f;
+        normals[idx+1] = 0.f;
+        normals[idx+2] = -1.f;
+    }
+    
+    // each stack
+    for (i=0; i<stacks+1; i++ )
+    {
+        for (j=0; j<slices; j++, idx+=3)
+        {
+            vertices[idx  ] = cost[j]*radf;
+            vertices[idx+1] = sint[j]*radf;
+            vertices[idx+2] = z;
+            normals[idx  ] = cost[j];
+            normals[idx+1] = sint[j];
+            normals[idx+2] = 0.f;
+        }
+
+        z += zStep;
+    }
+    
+    z -= zStep;
+    // other on bottom (get normals right)
+    for (j=0; j<slices; j++, idx+=3)
+    {
+        vertices[idx  ] = cost[j]*radf;
+        vertices[idx+1] = sint[j]*radf;
+        vertices[idx+2] = z;
+        normals[idx  ] = 0.f;
+        normals[idx+1] = 0.f;
+        normals[idx+2] = 1.f;
+    }
+    
+    // bottom
+    vertices[idx  ] =  0.f;
+    vertices[idx+1] =  0.f;
+    vertices[idx+2] =  height;
+    normals[idx  ] =  0.f;
+    normals[idx+1] =  0.f;
+    normals[idx+2] =  1.f;
+    
+    // Release sin and cos tables
+    free(sint);
+    free(cost);
+    
+    // _____________________________________________________________//
+    // fghCylinder
+    // _____________________________________________________________//
     stackIdx = (GLushort*)malloc(slices*(stacks+1)*sizeof(GLushort));
     sliceIdx = (GLushort*)malloc(slices*2         *sizeof(GLushort));
-    for (i=0,idx=0; i<stacks+1; i++)
+    for (i=0,idx=0; i<stacks+1; i++) // generate for each stack
     {
-        GLushort offset = 1+(i+1)*slices;
+        GLushort offset = 1+(i+1)*slices; // start at 1 (0 is top vertex), and we advance one stack down as we go along
         for (j=0; j<slices; j++, idx++)
         {
             stackIdx[idx] = offset+j;
         }
     }
-    for (i=0,idx=0; i<slices; i++)
+    for (i=0,idx=0; i<slices; i++) // generate for each slice
     {
-        GLushort offset = 1+i;
+        GLushort offset = 1+i; // start at 1 (0 is top vertex), and we advance one slice as we go along
         sliceIdx[idx++] = offset+slices;
         sliceIdx[idx++] = offset+(stacks+1)*slices;
     }
@@ -138,17 +211,13 @@ void Display_()
     glEnableClientState(GL_NORMAL_ARRAY);
     glVertexPointer(3, GL_FLOAT, 0, vertices);
     glNormalPointer(GL_FLOAT, 0, normals);
-    if (!sliceIdx)
-        for (i=0; i<numParts; i++)
-            glDrawArrays(GL_LINES, i*numVertPerPart, numVertPerPart);
-    else
-        for (i=0; i<numParts; i++)
-            glDrawElements(GL_LINES,numVertPerPart,GL_UNSIGNED_SHORT,sliceIdx+i*numVertPerPart);
+    
+    if (sliceIdx) for (i=0; i<numParts; i++) // drawing lines along the cylinder
+    glDrawElements(GL_LINES,numVertPerPart,GL_UNSIGNED_SHORT,sliceIdx+i*numVertPerPart);
 
-    if (stackIdx)
-        for (i=0; i<numParts2; i++)
-            glDrawElements(GL_LINE_LOOP,slices,GL_UNSIGNED_SHORT,stackIdx+i*slices);
-
+    if (stackIdx) for (i=0; i<numParts2; i++) // drawing rings
+    glDrawElements(GL_LINE_LOOP,slices,GL_UNSIGNED_SHORT,stackIdx+i*slices);
+    
     glDisableClientState(GL_VERTEX_ARRAY);
     glDisableClientState(GL_NORMAL_ARRAY);
     // end of manual draw
@@ -170,13 +239,15 @@ void Display_()
     
     GLuint gl_vertex_array; glGenVertexArrays(1, &gl_vertex_array); glBindVertexArray(gl_vertex_array);
     GLuint vertex_buffer; glGenBuffers(1,&vertex_buffer); glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+    //glVertexArrayElementBuffer()
+    //glVertexArrayVertexBuffer()
     
-    glNamedBufferData(vertex_buffer, nVert, vertices, GL_STATIC_DRAW);
+    glNamedBufferData(vertex_buffer, nVert*3, vertices, GL_STATIC_DRAW);
     //glBufferData(GL_ARRAY_BUFFER, nVert*3, vertices, GL_STATIC_DRAW);
     glEnableVertexArrayAttrib(gl_vertex_array, vertex_coord_location);
-    glVertexAttribPointer(vertex_coord_location, 3, GL_FLOAT, GL_TRUE, sizeof(GLfloat)*3, vertices);
+    glVertexAttribPointer(vertex_coord_location, 3, GL_FLOAT, GL_FALSE, 0, vertices);
     
-    glDrawArrays(GL_LINES, 0, nVert);
+    glDrawArrays(GL_LINES, 0, nVert*3);
     //glBindBuffer(GL_ARRAY_BUFFER, 0); // messes up inner lines???
     glBindVertexArray(0);*/
     
@@ -184,8 +255,8 @@ void Display_()
     
     /*
     // drawing wireframes with red fill/undercolor. seems like alpha is completely ignored
-    glColor4f(0.5f, 0.0f, 0.0f, 1.0f); glutSolidCylinder(radius, -height, slices, stacks);
-    glColor4f(0.0f, 1.0f, 1.0f, 1.0f); glutWireCylinder(radius, -height, slices, stacks);
+    glColor4f(0.5f, 0.0f, 0.0f, 1.0f); glutSolidCylinder(radius, height, slices, stacks);
+    glColor4f(0.0f, 1.0f, 1.0f, 1.0f); glutWireCylinder(radius, height, slices, stacks);
     glColor4f(0.5f, 0.0f, 0.0f, 1.0f); glutSolidSphere(radius*0.85, slices, stacks);
     glColor4f(0.0f, 1.0f, 1.0f, 1.0f); glutWireSphere(radius *0.85, slices, stacks);
     // careful with the stacking order ('solid' shapes completely occlude the area)
@@ -243,6 +314,9 @@ int main(int argc, char** argv)
     glutDisplayFunc(Display_);
     glutReshapeFunc(Reshape);
     //ActivateShaders();
+    //PrintCylinder();
+    //glutExit();
+    //return 0;
     
     // 'glutenum' here should be one of the GLUT API macro definitions from freeglut_std.h
     // starting from 'GLUT_WINDOW_X' and ending with 'GLUT_WINDOW_FORMAT_ID'
