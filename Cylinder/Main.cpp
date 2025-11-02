@@ -3,6 +3,7 @@
 #define GL_GLEXT_PROTOTYPES // must be defined to enable shader-related functions (glUseProgram)
 #include <GL/freeglut.h>
 #include <GL/freeglut_ext.h> // glut-shape functions
+//#include <GL/gl2.h>
 
 #include "glutCylinder.hpp"
 
@@ -78,6 +79,37 @@ void ActivateShaders()
   return;
 }
 #endif
+
+
+void DisplayGlutCylinder()
+{
+    static GLdouble rotation_angle{0.00};
+    static GLdouble rotation_delta{0.02};
+    
+    glClearColor(0.0, 0.0, 0.0, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    if (rotation_angle >= 360) rotation_angle -= 360.0; else
+    if (rotation_angle < -360) rotation_angle += 360.0;
+    rotation_angle += rotation_delta;
+    
+    glLoadIdentity();
+    glTranslated(-1, -1, 0);
+    glRotated(5.0, 2.5, -2.5, 1.0);
+    glRotated(rotation_angle, 0.0, 0.0, 1.0);
+    
+    double radius{1.0}; double height{-256.0}; GLint slices{64}; GLint stacks{64};
+    // drawing wireframes with red fill/undercolor. seems like alpha is completely ignored
+    glColor4f(0.5f, 0.0f, 0.0f, 1.0f); glutSolidCylinder(radius, height, slices, stacks);
+    glColor4f(0.0f, 1.0f, 1.0f, 1.0f); glutWireCylinder(radius, height, slices, stacks);
+    
+    glTranslated(0, 0, (height*0.5) - (height*0.5*sin(rotation_angle*0.1)));
+    //glColor4f(0.5f, 0.0f, 0.0f, 1.0f); glutSolidSphere(radius*0.85, slices, stacks);
+    glColor4f(0.0f, 1.0f, 1.0f, 1.0f); glutWireSphere(radius *0.85, slices, stacks);
+    // careful with the stacking order ('solid' shapes completely occlude the area)
+    
+    glutSwapBuffers();
+    glutPostRedisplay(); // marks the current window as ready to be displayed
+}
 
 
 // has a name collision with some freeglut function
@@ -214,13 +246,36 @@ void Display_()
     
     if (sliceIdx) for (i=0; i<numParts; i++) // drawing lines along the cylinder
     glDrawElements(GL_LINES,numVertPerPart,GL_UNSIGNED_SHORT,sliceIdx+i*numVertPerPart);
-
+    
     if (stackIdx) for (i=0; i<numParts2; i++) // drawing rings
     glDrawElements(GL_LINE_LOOP,slices,GL_UNSIGNED_SHORT,stackIdx+i*slices);
     
     glDisableClientState(GL_VERTEX_ARRAY);
     glDisableClientState(GL_NORMAL_ARRAY);
     // end of manual draw
+    
+    // these almost work (missing the lengthwise lines)
+    //glDrawArrays(GL_LINES,i*numVertPerPart,numVertPerPart); // drawing lines along the cylinder
+    //glDrawArrays(GL_LINE_LOOP,i*slices,numParts2); // drawing rings
+    
+    // attempting to find equivalent vertex/normal calls
+    //glDrawElements(GL_LINES,numVertPerPart,GL_UNSIGNED_SHORT,sliceIdx+i*numVertPerPart);
+    /*glBegin(GL_LINES);
+    for (i=0; i<numParts; i++) // drawing lines along the cylinder
+    {
+        glVertex3fv((GLfloat*)sliceIdx+i*numVertPerPart);
+        glNormal3fv((GLfloat*)sliceIdx+i*numVertPerPart);
+    }
+    glEnd();
+    
+    //glDrawElements(GL_LINE_LOOP,slices,GL_UNSIGNED_SHORT,stackIdx+i*slices);
+    glBegin(GL_LINE_LOOP);
+    for (i=0; i<numParts2; i++) // drawing rings
+    {
+        glVertex3fv((GLfloat*)stackIdx+i*slices);
+        glNormal3fv((GLfloat*)stackIdx+i*slices);
+    }
+    glEnd();*/
     
     // shaders apply even to previous draws?
     // why does the shader only ever draw a circle???
@@ -245,24 +300,20 @@ void Display_()
     glNamedBufferData(vertex_buffer, nVert*3, vertices, GL_STATIC_DRAW);
     //glBufferData(GL_ARRAY_BUFFER, nVert*3, vertices, GL_STATIC_DRAW);
     glEnableVertexArrayAttrib(gl_vertex_array, vertex_coord_location);
-    glVertexAttribPointer(vertex_coord_location, 3, GL_FLOAT, GL_FALSE, 0, vertices);
+    glVertexAttribPointer(vertex_coord_location, 3, GL_UNSIGNED_SHORT, GL_FALSE, 0, vertices);
+    
+    // fg_gl2.h / fg_gl2.c
+    //glutSetVertexAttribCoord3(vertex_coord_location);
+    //fghEnableVertexAttribArray(vertex_coord_location);
+    //fghVertexAttribPointer(vertex_coord_location, 3, GL_UNSIGNED_SHORT, GL_FALSE, 0, vertices);
     
     glDrawArrays(GL_LINES, 0, nVert*3);
     //glBindBuffer(GL_ARRAY_BUFFER, 0); // messes up inner lines???
     glBindVertexArray(0);*/
     
-    free(vertices); free(normals); free(stackIdx); free(sliceIdx);
-    
-    /*
-    // drawing wireframes with red fill/undercolor. seems like alpha is completely ignored
-    glColor4f(0.5f, 0.0f, 0.0f, 1.0f); glutSolidCylinder(radius, height, slices, stacks);
-    glColor4f(0.0f, 1.0f, 1.0f, 1.0f); glutWireCylinder(radius, height, slices, stacks);
-    glColor4f(0.5f, 0.0f, 0.0f, 1.0f); glutSolidSphere(radius*0.85, slices, stacks);
-    glColor4f(0.0f, 1.0f, 1.0f, 1.0f); glutWireSphere(radius *0.85, slices, stacks);
-    // careful with the stacking order ('solid' shapes completely occlude the area)
-    */
     glutSwapBuffers();
     glutPostRedisplay(); // marks the current window as ready to be displayed
+    free(vertices); free(normals); free(stackIdx); free(sliceIdx);
 }
 
 // window-resize callback. the function signature requires integer parameters,
@@ -311,7 +362,8 @@ int main(int argc, char** argv)
     glutCreateWindow("Cylinder Depth Test");
     
     InitializeGL();
-    glutDisplayFunc(Display_);
+    glutDisplayFunc(DisplayGlutCylinder);
+    //glutDisplayFunc(Display_);
     glutReshapeFunc(Reshape);
     //ActivateShaders();
     //PrintCylinder();
