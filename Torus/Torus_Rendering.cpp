@@ -17,17 +17,16 @@
 #define PRINTGLUT(glutenum) std::cout << #glutenum <<" = " << glutGet(glutenum) << '\n';
 
 
-double rotation_angle {0};
-double rotation_delta {0.005};
+float rotation_angle {0};
+float rotation_delta {rotation_delta_default};
 bool ShouldStopRendering {false};
-
 
 int index_total{0};
 
 constexpr std::array<GLenum, 9> rendermethods { GL_POINTS, GL_LINES, GL_LINE_LOOP, GL_LINE_STRIP, GL_QUADS, GL_TRIANGLE_STRIP, GL_TRIANGLE_FAN, GL_QUAD_STRIP, GL_POLYGON};
 //TRIANGLE_FAN and GL_POLYGON are both slow, but POLYGON seems a bit faster.
 GLenum cyclemethod {GL_LINE_STRIP};
-bool shouldCycleRendermethods = false;
+bool shouldCycleRendermethods {true};
 
 #define PRECALCULATE_TORUS_GEOMETRY
 #ifdef PRECALCULATE_TORUS_GEOMETRY
@@ -127,7 +126,8 @@ const Torus_t& Torus = GenerateTorus();
 
 void DrawPregenTorus()
 {
-    const int current_degree = int(rotation_angle) % 360;
+    // modulus is undefined for negative values (segfaults)
+    const int current_degree = int((rotation_angle > 0)? rotation_angle:-rotation_angle) % 360;
     glBegin(cyclemethod);
 
     // iterates through Torus arrays (old method)
@@ -217,14 +217,15 @@ void display()
 
     if (shouldCycleRendermethods)
     {
-        const int currentmethod_index = int(rotation_angle / 360) % 9;
+        // modulus is undefined for negative values (segfaults)
+        const int currentmethod_index = int(((rotation_angle > 0)? rotation_angle:-rotation_angle) / 360) % 9;
         if (cyclemethod != rendermethods[currentmethod_index])
         {
             cyclemethod = rendermethods[currentmethod_index];
             std::cout << "rendermethod: " << currentmethod_index << std::endl;
 
-        // speed up rotation to compensate FPS-drops on certain rendermethods
-            rotation_delta = (((currentmethod_index == 6) || (currentmethod_index == 8))? rotation_delta_default * 3.0 : rotation_delta_default);
+            // speed up rotation to compensate FPS-drops on certain rendermethods
+            //rotation_delta = (((currentmethod_index == 6) || (currentmethod_index == 8))? rotation_delta_default * 3.0 : rotation_delta_default);
         }
     }
 
@@ -372,7 +373,7 @@ bool TestCmdlineParsing(int argc, char** argv)
 #endif
 
 // This version of main launches only the Torus Window in a seperate thread
-#define THIS_IS_MAIN_FILE // undefine (define in main.cpp) for ImGUI window
+//#define THIS_IS_MAIN_FILE // undefine (define in main.cpp) for ImGUI window
 #ifdef THIS_IS_MAIN_FILE
 int main(int argc, char** argv, char** envp) {
     #ifdef TESTCMDLINEPARSING

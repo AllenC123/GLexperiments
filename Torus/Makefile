@@ -1,5 +1,5 @@
 MAKEFLAGS += -j8
-CXX = g++-13
+CXX = g++
 # make --recon -d --no-builtin-rules
 
 target_executable := TORUS
@@ -7,7 +7,6 @@ IMGUI_DIR := ./imgui
 IMGUI_SOURCES := $(wildcard ${IMGUI_DIR}/*.cpp)
 IMGUI_SOURCES += $(wildcard ${IMGUI_DIR}/backends/*.cpp)
 
-#SOURCES = main.cpp Torus.cpp Torus_Rendering.cpp
 SOURCES = $(wildcard *.cpp)
 OBJECTFILE_DIR = build/objects
 OBJECTFILE_DIR_IMGUI = build/objects_imgui
@@ -17,19 +16,13 @@ DEPFILES := $(OBJFILES:.o=.d)
 OBJFILES_IMGUI := $(patsubst ${IMGUI_DIR}/%.cpp,$(OBJECTFILE_DIR_IMGUI)/%.o, $(IMGUI_SOURCES))
 DEPFILES_IMGUI := $(OBJFILES_IMGUI:.o=.d)
 
-#CXXFLAGS = -std=c++20 -O3 -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends
-CXXFLAGS := -std=c++20 -O3 -pipe -Wall -Wextra -Wpedantic -Wfatal-errors
-#CXXFLAGS += -Wall -Wformat
+#CXXFLAGS = -std=c++23 -O3 -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends
+CXXFLAGS := -std=c++23 -O3 -pipe -Wall -Wextra -Wpedantic -Wfatal-errors
 LDFLAGS := -lglfw -lGL -limgui -lglut -lGLU -lpthread
 
 PROJECT_DIR := $(shell pwd)
 
 MAKEOPTS += -j8
-
-# TODO:
-# OBJFILES should point to or output-to the imgui/objectfiles sub-folder
-# clean unnecessary header/code files out of imgui folder
-# move libimgui.so location to imgui folder instead
 
 ##---------------------------------------------------------------------
 ## BUILD RULES
@@ -92,7 +85,7 @@ reallyclean: clean
 	@-rm --verbose ${DEPFILES_IMGUI} 2> /dev/null || true
 
 
-# this has to be at the end of the file?
+# this has to be at the end of the file
 -include $(DEPFILES)
 -include $(DEPFILES_IMGUI)
 # Include the .d makefiles. The '-' at the front suppresses the errors of missing depfiles.
