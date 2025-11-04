@@ -1,53 +1,40 @@
 #include <iostream>
+#include <format> // ParseCmdlineArgs
+#include <cmath>  // inlined 'fghCircleTable' requires: sin, cos, and M_PI
 
 #define GL_GLEXT_PROTOTYPES // must be defined to enable shader-related functions (glUseProgram)
 #include <GL/freeglut.h>
 #include <GL/freeglut_ext.h> // glut-shape functions
-//#include <GL/gl2.h>
-
-#include "glutCylinder.hpp"
 
 
+// alternative rendering selection
+static bool useGlutFunction{false};
+static bool glutSphereMovement{true};
+static GLdouble rotation_angle{0.00};
+static GLdouble rotation_delta{0.02};
+
+// Cylinder variables and geometric parameters
+GLfloat* vertices; GLfloat* normals; GLushort* sliceIdx; GLushort* stackIdx;
+double radius{1.0}; double height{256.0}; GLint slices{64}; GLint stacks{64};
+int nVert{slices*(stacks+3)+2}; // need two extra stacks for closing off top and bottom with correct normals
+// Note, (stacks+1)*slices vertices for side of object, 2*slices+2 for top and bottom closures
+
+
+//#define DISABLE_SHADERS
 #ifndef DISABLE_SHADERS
-#include "VertexT.hpp"
 #include "ShaderLoading.hpp"
+
+// intentionally sets incorrect 'stride' value in 'glVertexAttribPointer'
+// which causes the shader to draw a figure-8 spline (using glDrawArrays)
+#define RENDER_SPLINE_HACK
+
+GLuint shader_program{0};
+GLuint gl_vertex_array{};
+GLuint vertex_buffer{};
+
 void ActivateShaders()
 {
-  /*static const std::array<VertexT, 3> vertex_list {
-      VERTEX({-0.75f, 0.67f}, {1.f, 0.f, 0.f}),
-      VERTEX({ 0.75f, 0.67f}, {0.f, 1.f, 0.f}),
-      VERTEX({ 0.0f, -0.75f}, {0.f, 0.f, 1.f}),
-  };*/
-  
-  GLfloat* vertices; GLfloat* normals; GLushort* sliceIdx; GLushort* stackIdx;
-  double radius{1.0}; double height{256.0}; GLint slices{64}; GLint stacks{64};
-  glColor4f(0.0f, 1.0f, 1.0f, 1.0f);
-  
-  int i,j,idx, nVert;
-  fghGenerateCylinder(radius,-height,slices,stacks,&vertices,&normals,&nVert);
-  stackIdx = (GLushort*)malloc(slices*(stacks+1)*sizeof(GLushort));
-  sliceIdx = (GLushort*)malloc(slices*2         *sizeof(GLushort));
-  for (i=0,idx=0; i<stacks+1; i++)
-  {
-      GLushort offset = 1+(i+1)*slices;
-      for (j=0; j<slices; j++, idx++)
-      {
-          stackIdx[idx] = offset+j;
-      }
-  }
-  for (i=0,idx=0; i<slices; i++)
-  {
-      GLushort offset = 1+i;
-      sliceIdx[idx++] = offset+slices;
-      sliceIdx[idx++] = offset+(stacks+1)*slices;
-  }
-  /*fghDrawGeometryWire(
-      vertices, normals, nVert,
-      sliceIdx, 1, slices*2, GL_LINES,
-      stackIdx, stacks+1, slices
-  );*/
-  
-  const GLuint shader_program = CompileShaders();
+  shader_program = CompileShaders();
   if (!ValidateShaderProgram(shader_program)) {
       std::cerr << "shader validation failed\n";
       exit(3);
@@ -55,37 +42,32 @@ void ActivateShaders()
   else glUseProgram(shader_program);
   bool attributeLookupFailed{false};
   const GLint vertex_coord_location{glGetAttribLocation(shader_program, "vertex_coord")};
-  //const GLint vertex_color_location{glGetAttribLocation(shader_program, "vertex_color")};
   
-  // https://registry.khronos.org/OpenGL-Refpages/gl4/html/glGetAttribLocation.xhtml
-  //If the named attribute is not an active attribute in the specified program object,
-  //  or if the name starts with the reserved prefix "gl_", a value of -1 is returned.
   if (vertex_coord_location == -1) { std::cerr << "shader attribute-lookup failed for: 'vertex_coord'\n"; attributeLookupFailed = true; }
-  //if (vertex_color_location == -1) { std::cerr << "shader attribute-lookup failed for: 'vertex_color'\n"; attributeLookupFailed = true; }
   if (attributeLookupFailed) { exit(4); }
   
-  GLuint gl_vertex_array; glGenVertexArrays(1, &gl_vertex_array); glBindVertexArray(gl_vertex_array);
-  GLuint vertex_buffer; glGenBuffers(1,&vertex_buffer); glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-  //glNamedBufferData(vertex_buffer, sizeof(vertex_list), vertex_list[0].coord.data(), GL_STATIC_DRAW);
-  glNamedBufferData(vertex_buffer, nVert*3, vertices, GL_STATIC_DRAW);
+  glGenVertexArrays(1, &gl_vertex_array); glBindVertexArray(gl_vertex_array);
+  glGenBuffers(1,&vertex_buffer); glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
   
   glEnableVertexArrayAttrib(gl_vertex_array, vertex_coord_location);
-  //glEnableVertexArrayAttrib(gl_vertex_array, vertex_color_location);
-  glVertexAttribPointer(vertex_coord_location, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat)*3, vertices);
-  //glVertexAttribPointer(vertex_color_location, 3, GL_FLOAT, GL_TRUE, sizeof(GLfloat), normals);
-  // these ^ function-calls describe the data-layout of the data in 'GL_ARRAY_BUFFER'
-  
-  free(vertices); free(normals); free(stackIdx); free(sliceIdx);
+  glEnableVertexArrayAttrib(vertex_buffer, vertex_coord_location);
+  #ifndef RENDER_SPLINE_HACK
+    // stride parameter should be calculated using a multiple of the 'size' parameter (array length)
+    glVertexAttribPointer(vertex_coord_location, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat)*3, vertices);
+  #else //RENDER_SPLINE_HACK
+    // intentionally incorrect stride (no multiplier); renders a figure-8 spline with 'glDrawArray'
+    glVertexAttribPointer(vertex_coord_location, 3, GL_FLOAT, GL_FALSE, sizeof(GLfloat), vertices);
+  #endif
   return;
 }
-#endif
+
+#endif //#ifndef DISABLE_SHADERS
 
 
-void DisplayGlutCylinder()
+// Alternative implementation using GLUT shape-drawing functions
+// displays wireframe cylinder and sphere - both with a red fill
+void GlutRenderCylinder()
 {
-    static GLdouble rotation_angle{0.00};
-    static GLdouble rotation_delta{0.02};
-    
     glClearColor(0.0, 0.0, 0.0, 1.0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     if (rotation_angle >= 360) rotation_angle -= 360.0; else
@@ -97,27 +79,30 @@ void DisplayGlutCylinder()
     glRotated(5.0, 2.5, -2.5, 1.0);
     glRotated(rotation_angle, 0.0, 0.0, 1.0);
     
-    double radius{1.0}; double height{-256.0}; GLint slices{64}; GLint stacks{64};
     // drawing wireframes with red fill/undercolor. seems like alpha is completely ignored
-    glColor4f(0.5f, 0.0f, 0.0f, 1.0f); glutSolidCylinder(radius, height, slices, stacks);
-    glColor4f(0.0f, 1.0f, 1.0f, 1.0f); glutWireCylinder(radius, height, slices, stacks);
+    glColor4f(0.5f, 0.0f, 0.0f, 1.0f); glutSolidCylinder(radius, -height, slices, stacks);
+    glColor4f(0.0f, 1.0f, 1.0f, 1.0f); glutWireCylinder(radius, -height, slices, stacks);
     
-    glTranslated(0, 0, (height*0.5) - (height*0.5*sin(rotation_angle*0.1)));
-    //glColor4f(0.5f, 0.0f, 0.0f, 1.0f); glutSolidSphere(radius*0.85, slices, stacks);
+    if (glutSphereMovement)
+    { glTranslated(0, 0,-(height*0.5)+(height*0.5*sin(rotation_angle*0.1))); } else {
+    glColor4f(0.5f, 0.0f, 0.0f, 1.0f); glutSolidSphere(radius*0.85, slices, stacks);}
     glColor4f(0.0f, 1.0f, 1.0f, 1.0f); glutWireSphere(radius *0.85, slices, stacks);
     // careful with the stacking order ('solid' shapes completely occlude the area)
     
     glutSwapBuffers();
     glutPostRedisplay(); // marks the current window as ready to be displayed
+    return;
 }
 
 
-// has a name collision with some freeglut function
-void Display_()
+// Unfortunately, GLUT functions allocate (and delete!) all of their generated vertex-array data internally.
+// Consequently, integrating shaders becomes impossible because you cannot create a pointer for glBufferData
+// This function effectively inlines the entire codepath executed by glutWireCylinder (expanded recursively),
+//  such that all vertex-data remains accessible during rendering.
+//  also heap-allocated variables have been made static or global.
+// Reimplementation of 'glutWireCylinder' with shader integration!
+void RenderCylinder()
 {
-    static GLdouble rotation_angle{0.00};
-    static GLdouble rotation_delta{0.02};
-    
     glClearColor(0.0, 0.0, 0.0, 1.0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     if (rotation_angle >= 360) rotation_angle -= 360.0; else
@@ -130,25 +115,38 @@ void Display_()
     glRotated(rotation_angle, 0.0, 0.0, 1.0);
     
     glColor4f(0.0f, 1.0f, 1.0f, 1.0f);
-    GLfloat* vertices; GLfloat* normals; GLushort* sliceIdx; GLushort* stackIdx;
-    double radius{1.0}; double height{-256.0}; GLint slices{64}; GLint stacks{64};
-    // why doesn't this work?????????
-    /*int nVert = fghCylinder(
-        radius, -height, slices, stacks, GL_TRUE,
-        vertices, normals, sliceIdx, stackIdx
-    );*/
-    
     int i,j,idx{0}; // idx into vertex/normal buffer
     GLfloat radf = (GLfloat)radius; GLfloat z;
-    const GLfloat zStep = (GLfloat)height / ( ( stacks > 0 ) ? stacks : 1 ); // Step in z as stacks are drawn.
-    GLfloat *sint,*cost; // Pre-computed circle
-    fghCircleTable(&sint,&cost,-slices,GL_FALSE);
+    const GLfloat zStep = (GLfloat)-height/((stacks > 0)? stacks : 1); // Step in z as stacks are drawn.
     
-    int nVert{slices*(stacks+3)+2}; // need two extra stacks for closing off top and bottom with correct normals
-    // Note, (stacks+1)*slices vertices for side of object, 2*slices+2 for top and bottom closures
-    //fghGenerateCylinder(radius,-height,slices,stacks,&vertices,&normals,&nVert);
-    vertices = (GLfloat*)malloc((nVert)*3*sizeof(GLfloat));
-    normals  = (GLfloat*)malloc((nVert)*3*sizeof(GLfloat));
+    // Pre-computed circle
+    static GLfloat *sint{};
+    static GLfloat *cost{};
+    if ((!sint) || (!cost))
+    { // fghCircleTable(&sint, &cost, -slices, GL_FALSE);
+      const int size = abs(slices); // Table size, the sign of slices flips the circle direction
+      // Allocate memory for n samples, plus duplicate of first entry at the end
+      sint = (GLfloat*)malloc(sizeof(GLfloat) * (size+1));
+      cost = (GLfloat*)malloc(sizeof(GLfloat) * (size+1));
+      sint[0] = 0.0f;
+      cost[0] = 1.0f;
+      
+      // Determine the angle between samples
+      const GLfloat angle = 2*(GLfloat)M_PI/(GLfloat)((slices == 0)? 1 : slices);
+      
+      // Compute cos and sin around the circle
+      for (int i{1}; i < size; ++i) {
+          sint[i] = (GLfloat)sin(angle*i);
+          cost[i] = (GLfloat)cos(angle*i);
+      }
+      // Last sample is duplicate of the first (sin or cos of 2 PI)
+      sint[size] = sint[0];
+      cost[size] = cost[0];
+    }
+    
+    //fghGenerateCylinder(radius, -height, slices, stacks, &vertices, &normals, &nVert);
+    if (!vertices) vertices = (GLfloat*)malloc((nVert)*3*sizeof(GLfloat));
+    if (!normals)  normals  = (GLfloat*)malloc((nVert)*3*sizeof(GLfloat));
     
     z=0; // top on Z-axis
     vertices[0] =  0.f;
@@ -206,14 +204,13 @@ void Display_()
     normals[idx+2] =  1.f;
     
     // Release sin and cos tables
-    free(sint);
-    free(cost);
+    //free(sint); free(cost);
     
     // _____________________________________________________________//
     // fghCylinder
     // _____________________________________________________________//
-    stackIdx = (GLushort*)malloc(slices*(stacks+1)*sizeof(GLushort));
-    sliceIdx = (GLushort*)malloc(slices*2         *sizeof(GLushort));
+    if (!stackIdx) stackIdx = (GLushort*)malloc(slices*(stacks+1)*sizeof(GLushort));
+    if (!sliceIdx) sliceIdx = (GLushort*)malloc(slices*2         *sizeof(GLushort));
     for (i=0,idx=0; i<stacks+1; i++) // generate for each stack
     {
         GLushort offset = 1+(i+1)*slices; // start at 1 (0 is top vertex), and we advance one stack down as we go along
@@ -228,93 +225,49 @@ void Display_()
         sliceIdx[idx++] = offset+slices;
         sliceIdx[idx++] = offset+(stacks+1)*slices;
     }
-    /*fghDrawGeometryWire(
-      vertices, normals, nVert,
-      sliceIdx, 1, slices*2, GL_LINES,
-      stackIdx, stacks+1, slices
-    );*/
     
-    // manually drawing
-    GLsizei numParts = 1;
-    GLsizei numParts2 = stacks+1;
-    GLsizei numVertPerPart = slices*2;
+    // __________________________________________________________________________________ //
+    // rendering
+    // __________________________________________________________________________________ //
     
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glEnableClientState(GL_NORMAL_ARRAY);
-    glVertexPointer(3, GL_FLOAT, 0, vertices);
-    glNormalPointer(GL_FLOAT, 0, normals);
+    #ifndef DISABLE_SHADERS
+        if (!shader_program) ActivateShaders();
+        glUseProgram(shader_program);
+        glBindVertexArray(gl_vertex_array);
+        glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+        
+        // which one of these is correct? why does this only SOMETIMES work??
+        glNamedBufferData(gl_vertex_array, nVert, vertices, GL_DYNAMIC_DRAW);
+        glNamedBufferData(vertex_buffer, nVert*3, vertices, GL_DYNAMIC_DRAW);
+        //glNamedBufferData(gl_vertex_array, sizeof(vertices), vertices, GL_DYNAMIC_DRAW);
+        //glNamedBufferData(vertex_buffer, sizeof(vertices), vertices, GL_DYNAMIC_DRAW);
+    #endif
     
-    if (sliceIdx) for (i=0; i<numParts; i++) // drawing lines along the cylinder
-    glDrawElements(GL_LINES,numVertPerPart,GL_UNSIGNED_SHORT,sliceIdx+i*numVertPerPart);
-    
-    if (stackIdx) for (i=0; i<numParts2; i++) // drawing rings
-    glDrawElements(GL_LINE_LOOP,slices,GL_UNSIGNED_SHORT,stackIdx+i*slices);
-    
-    glDisableClientState(GL_VERTEX_ARRAY);
-    glDisableClientState(GL_NORMAL_ARRAY);
-    // end of manual draw
-    
-    // these almost work (missing the lengthwise lines)
-    //glDrawArrays(GL_LINES,i*numVertPerPart,numVertPerPart); // drawing lines along the cylinder
-    //glDrawArrays(GL_LINE_LOOP,i*slices,numParts2); // drawing rings
-    
-    // attempting to find equivalent vertex/normal calls
-    //glDrawElements(GL_LINES,numVertPerPart,GL_UNSIGNED_SHORT,sliceIdx+i*numVertPerPart);
-    /*glBegin(GL_LINES);
-    for (i=0; i<numParts; i++) // drawing lines along the cylinder
-    {
-        glVertex3fv((GLfloat*)sliceIdx+i*numVertPerPart);
-        glNormal3fv((GLfloat*)sliceIdx+i*numVertPerPart);
-    }
-    glEnd();
-    
-    //glDrawElements(GL_LINE_LOOP,slices,GL_UNSIGNED_SHORT,stackIdx+i*slices);
-    glBegin(GL_LINE_LOOP);
-    for (i=0; i<numParts2; i++) // drawing rings
-    {
-        glVertex3fv((GLfloat*)stackIdx+i*slices);
-        glNormal3fv((GLfloat*)stackIdx+i*slices);
-    }
-    glEnd();*/
-    
-    // shaders apply even to previous draws?
-    // why does the shader only ever draw a circle???
-    /*const GLuint shader_program = CompileShaders();
-    if (!ValidateShaderProgram(shader_program)) {
-        std::cerr << "shader validation failed\n";
-        exit(3);
-    }
-    else glUseProgram(shader_program);
-    bool attributeLookupFailed{false};
-    const GLint vertex_coord_location{glGetAttribLocation(shader_program, "vertex_coord")};
-    
-    if (vertex_coord_location == -1) { std::cerr << "shader attribute-lookup failed for: 'vertex_coord'\n"; attributeLookupFailed = true; }
-    //if (vertex_color_location == -1) { std::cerr << "shader attribute-lookup failed for: 'vertex_color'\n"; attributeLookupFailed = true; }
-    if (attributeLookupFailed) { exit(4); }
-    
-    GLuint gl_vertex_array; glGenVertexArrays(1, &gl_vertex_array); glBindVertexArray(gl_vertex_array);
-    GLuint vertex_buffer; glGenBuffers(1,&vertex_buffer); glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-    //glVertexArrayElementBuffer()
-    //glVertexArrayVertexBuffer()
-    
-    glNamedBufferData(vertex_buffer, nVert*3, vertices, GL_STATIC_DRAW);
-    //glBufferData(GL_ARRAY_BUFFER, nVert*3, vertices, GL_STATIC_DRAW);
-    glEnableVertexArrayAttrib(gl_vertex_array, vertex_coord_location);
-    glVertexAttribPointer(vertex_coord_location, 3, GL_UNSIGNED_SHORT, GL_FALSE, 0, vertices);
-    
-    // fg_gl2.h / fg_gl2.c
-    //glutSetVertexAttribCoord3(vertex_coord_location);
-    //fghEnableVertexAttribArray(vertex_coord_location);
-    //fghVertexAttribPointer(vertex_coord_location, 3, GL_UNSIGNED_SHORT, GL_FALSE, 0, vertices);
-    
-    glDrawArrays(GL_LINES, 0, nVert*3);
-    //glBindBuffer(GL_ARRAY_BUFFER, 0); // messes up inner lines???
-    glBindVertexArray(0);*/
+    #ifdef RENDER_SPLINE_HACK
+    glDrawArrays(GL_LINE_LOOP, 0, nVert);
+    // spline rendering (no multiplier on 'stride' in 'glVertexAttribPointer')
+    // should draw vertex-data with 'glDrawArrays' instead of 'glDrawElements'
+    #else // manually drawing
+        glVertexPointer(3, GL_FLOAT, 0, vertices);
+        glNormalPointer(GL_FLOAT, 0, normals);
+        
+        GLsizei numParts = 1;
+        GLsizei numParts2 = stacks+1;
+        GLsizei numVertPerPart = slices*2;
+        
+        for (i=0; i<numParts; i++) // drawing lines along the cylinder
+        glDrawElements(GL_LINES, numVertPerPart, GL_UNSIGNED_SHORT, sliceIdx+(i*numVertPerPart));
+        
+        for (i=0; i<numParts2; i++) // drawing rings
+        glDrawElements(GL_LINE_LOOP, slices, GL_UNSIGNED_SHORT, stackIdx+(i*slices));
+    #endif
     
     glutSwapBuffers();
     glutPostRedisplay(); // marks the current window as ready to be displayed
-    free(vertices); free(normals); free(stackIdx); free(sliceIdx);
+    //free(vertices); free(normals); free(stackIdx); free(sliceIdx);
+    return;
 }
+
 
 // window-resize callback. the function signature requires integer parameters,
 // otherwise they should be doubles to avoid the recasting in 'gluPerspective'
@@ -327,8 +280,21 @@ void Reshape(int width, int height) {
     glMatrixMode(GL_MODELVIEW); // this can go in 'display' function instead
 }
 
+// no idea what the integer parameters are
+void KeypressCallback(unsigned char C, int, int) {
+    switch(C) {
+        case 'q': case 'Q': glutExit(); exit(0);
+        default: break;
+    }
+}
+
 void InitializeGL()
 {
+    #ifdef DISABLE_SHADERS
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_NORMAL_ARRAY);
+    #endif
+    
     glClearColor(0.0, 0.0, 0.0, 1.0);
     glLineWidth(1.0f);
     
@@ -339,17 +305,86 @@ void InitializeGL()
     glMatrixMode(GL_MODELVIEW);
 }
 
+int ParseCmdlineArgs(int argc, char** argv)
+{
+    for (int C{1}; C<argc; C++)
+    { // parsing commandline arguments
+      std::string arg{argv[C]}; bool known{false};
+      std::cout << std::format("arg[#{}]: '{}'\n", C, arg);
+      if (arg.starts_with("--rotationspeed")) { known=true; rotation_delta=std::stod(argv[++C]); } // TODO: bounds-check
+      if (arg.starts_with("--rotationdelta")) { known=true; rotation_delta=std::stod(argv[++C]); } // TODO: bounds-check
+      if (arg.starts_with("--freeze-sphere")) { known=true; glutSphereMovement=false; }
+      if (arg.starts_with("--altrender") ||
+      (arg.starts_with("--glut-cylinder")))
+      { known=true; useGlutFunction=true; }
+      if ((!known) || (arg == "--help")) {
+      if (arg != "--help") std::cerr << std::format("[ERROR] unrecognized argument: '{}'\n", arg);
+        typedef std::array<std::string, 2> UsageString; std::array<UsageString, 5> OptionStrings {
+          UsageString{"--glut-cylinder", "render with glut shape-drawing functions (no shaders)"},
+          UsageString{"--freeze-sphere", "disables sphere movement inside glut drawing function"},
+          UsageString{"--rotationspeed", "set the rotation speed of the cylinder (default 0.02)"},
+          UsageString{"--rotationdelta", "alias of '--rotationspeed'"},
+          UsageString{"--altrender", "alias of '--glut-cylinder'"},
+        }; std::cerr << "available options:\n";
+        for (const auto& [option, description]: OptionStrings) {
+          std::cerr << std::format(" {}: {}\n", option, description);
+        } std::cerr << '\n';
+        if (arg == "--help") {
+          std::cerr << "'Q' terminates the program\n";
+          std::cerr << "when shaders are enabled, you may get a completely black window\n"
+            << "in that case, just re-run the program until it renders something (lmao)\n"
+            << "  The GLUT implementation of the rendering-function should always work.\n";
+        }
+        return C;
+      }
+    }
+    // TODO: iterate over OptionStrings to match and parse args.
+    // implement aliases and nargs/arg-counts for options expecting parameters (like '--rotationspeed')
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
+    if (int status{0}; (status = ParseCmdlineArgs(argc, argv)))
+        return status; // returns index of first invalid arg
+    
+    if (!useGlutFunction)
+    {
+      std::cout << "OpenGL Cylinder Rendering";
+      #ifdef DISABLE_SHADERS
+        std::cout << "\n_________________\n";
+        std::cout << "\nSHADERS DISABLED!\n";
+        std::cout << "_________________\n\n";
+      #else
+        std::cout << " [using shaders]";
+        #ifndef RENDER_SPLINE_HACK
+            std::cout << "\n\n";
+        #endif
+      #endif
+      #ifdef RENDER_SPLINE_HACK
+        std::cout << "\n____________________________\n";
+        std::cout << "\nSPLINE RENDERING HACK ACTIVE\n";
+        std::cout << "____________________________\n\n";
+      #endif
+    } else { // if (useGlutFunction)
+      std::cout << "\nCylinder Rendering using GLUT [shaders off]\n";
+      std::cout << std::format("    glut-sphere movement type: {}\n",
+          ((glutSphereMovement)? "sliding" : "frozen (stationary)"));
+      std::cout << '\n';
+    }
+    // TODO: pretty sure 'RENDER_SPLINE_HACK' can be refactored to boolean
+    // TODO: print more cylinder vars (rotation-speed, radius, length, etc)
+    // TODO: keybinds for: rotation_delta, sphere-movement, camera position
+    // TODO: cmdline args for shader names and other params (slices/stacks)
+    // is it possible to reassign 'glutDisplayFunc' in mainloop? test this.
+    
     glutInit(&argc, argv);
     glutInitWindowSize(960, 960);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_ALPHA | GLUT_DEPTH);
-    //glutInitContextVersion(3,1); // version 4.0+ unsupported? (glut shape functions don't render)
-    // 3.1 renders the shapes, but all higher versions do not. v3.3 is highest minor version for v3
     
-    //'GLUT_CORE_PROFILE' is default? (doesn't render)
-    glutInitContextProfile(GLUT_COMPATIBILITY_PROFILE); // fixes higher versions
-    glutInitContextVersion(4, 6); // rendering works with compatibility-profile!
+    // seems unnecessary to specify the context-version - defaults to 1.0
+    //glutInitContextProfile(GLUT_COMPATIBILITY_PROFILE); // fixes higher versions
+    //glutInitContextVersion(4, 6); // rendering works with compatibility-profile!
     
     // ironically, 'GLUT_FORWARD_COMPATIBLE' breaks rendering for all context-versions above 2.1!!
     /*glutInitContextFlags(GLUT_DEBUG | GLUT_FORWARD_COMPATIBLE); // context-flags can be combined
@@ -359,16 +394,12 @@ int main(int argc, char** argv)
     // must be called after glutInit
     //glutSetOption(GLUT_GEOMETRY_VISUALIZE_NORMALS, true); // only affects glut's built-in object-rendering functions (glutTorus)
     // 'GLUT_GEOMETRY_VISUALIZE_NORMALS' has no effect on the cylinder/sphere functions?
-    glutCreateWindow("Cylinder Depth Test");
     
-    InitializeGL();
-    glutDisplayFunc(DisplayGlutCylinder);
-    //glutDisplayFunc(Display_);
+    glutCreateWindow("CylinderRender");
+    glutKeyboardFunc(KeypressCallback);
+    glutDisplayFunc((!useGlutFunction)?
+    RenderCylinder:GlutRenderCylinder);
     glutReshapeFunc(Reshape);
-    //ActivateShaders();
-    //PrintCylinder();
-    //glutExit();
-    //return 0;
     
     // 'glutenum' here should be one of the GLUT API macro definitions from freeglut_std.h
     // starting from 'GLUT_WINDOW_X' and ending with 'GLUT_WINDOW_FORMAT_ID'
@@ -391,6 +422,8 @@ int main(int argc, char** argv)
     PRINTGLUT(GLUT_ELAPSED_TIME);
     std::cout << '\n';
     
+    InitializeGL();
     glutMainLoop(); // never returns
+    
     return 0;
 }
