@@ -4,6 +4,7 @@
 #include <iostream>
 #include <vector>
 
+// returns the contents of the file as a string
 std::string LoadShader(std::string shader_name)
 {
     std::filesystem::path shader_directory{std::filesystem::current_path() / "shaders"};
@@ -18,7 +19,7 @@ std::string LoadShader(std::string shader_name)
     std::cout << "loading shader: " << shader_path.filename() << '\n';
     std::cout << "________________________________________________\n";
     if (!std::filesystem::exists(shader_path)) {
-        std::cerr << "[ERROR] failed to locate shader: " << shader_path << std::endl;
+        std::cerr << "[ERROR] shader does not exist: " << shader_path << std::endl;
         exit(3);
     }
     
@@ -35,12 +36,14 @@ std::string LoadShader(std::string shader_name)
 #define GL_GLEXT_PROTOTYPES // must be defined for shader-related functions (glCreateShader, glCompileShader, etc)
 #include <GL/gl.h>
 
-GLuint CompileShaders()
+GLuint CompileShaders(std::string vert_shader_name, std::string frag_shader_name)
 {
-    static const std::string vert_shader_str{LoadShader("test.vert")};
-    static const std::string frag_shader_str{LoadShader("test.frag")};
-    static const GLchar* vert_shader_cstring{vert_shader_str.c_str()};
-    static const GLchar* frag_shader_cstring{frag_shader_str.c_str()};
+    if (!vert_shader_name.ends_with(".vert")) vert_shader_name.append(".vert");
+    if (!frag_shader_name.ends_with(".frag")) frag_shader_name.append(".frag");
+    static const std::string vert_shader_code{LoadShader(vert_shader_name)};
+    static const std::string frag_shader_code{LoadShader(frag_shader_name)};
+    static const GLchar* vert_shader_cstring{vert_shader_code.c_str()};
+    static const GLchar* frag_shader_cstring{frag_shader_code.c_str()};
     
     const GLuint vertex_shader{glCreateShader(GL_VERTEX_SHADER)};
     glShaderSource(vertex_shader, 1, &vert_shader_cstring, NULL);
@@ -69,8 +72,8 @@ bool ValidateShaderProgram(GLuint program)
     glGetProgramiv(program, GL_LINK_STATUS, &link_status);
     glGetProgramiv(program, GL_VALIDATE_STATUS, &isValid);
     
-    std::vector<GLchar> infolog(4096, '\0'); GLsizei loglength{0};
-    glGetProgramInfoLog(program,4096, &loglength, infolog.data());
+    std::vector<GLchar> infolog(512, '\0'); GLsizei loglength{0};
+    glGetProgramInfoLog(program,512, &loglength, infolog.data());
     
     if (loglength > 0) {
         const std::string underline{"\n________________________________________________________\n"};
