@@ -4,7 +4,6 @@
 
 #define GL_GLEXT_PROTOTYPES // must be defined to enable shader-related functions (glUseProgram)
 #include <GL/freeglut.h>
-#include <GL/freeglut_ext.h> // glut-shape functions
 
 
 // alternative rendering selection
@@ -19,6 +18,16 @@ double radius{1.0}; double height{256.0}; GLint slices{64}; GLint stacks{64};
 int nVert{slices*(stacks+3)+2}; // need two extra stacks for closing off top and bottom with correct normals
 // Note, (stacks+1)*slices vertices for side of object, 2*slices+2 for top and bottom closures
 
+// lowercase 'clock' already defined in 'time.h' - pulled in by 'freeglut.h'??
+static unsigned int Clock{0};
+static int timer_delay_ms{1};
+static int timer_delta_ms{1};
+void UpdateClock(int time) {
+  Clock = (time+timer_delta_ms);
+  glutTimerFunc(timer_delay_ms, UpdateClock, Clock);
+//std::cout << std::format("UpdateClock:{}\n",time);
+}
+
 
 //#define DISABLE_SHADERS
 #ifndef DISABLE_SHADERS
@@ -32,9 +41,12 @@ GLuint shader_program{0};
 GLuint gl_vertex_array{};
 GLuint vertex_buffer{};
 
+// shader uniform - needs to be accessible in the render-function to update its value
+GLint clock_location{-1};
+
 void ActivateShaders()
 {
-  shader_program = CompileShaders();
+  shader_program = CompileShaders("rgbified");
   if (!ValidateShaderProgram(shader_program)) {
       std::cerr << "shader validation failed\n";
       exit(3);
@@ -42,10 +54,13 @@ void ActivateShaders()
   else glUseProgram(shader_program);
   bool attributeLookupFailed{false};
   const GLint vertex_coord_location{glGetAttribLocation(shader_program, "vertex_coord")};
+  clock_location = glGetUniformLocation(shader_program, "clock");
   
   if (vertex_coord_location == -1) { std::cerr << "shader attribute-lookup failed for: 'vertex_coord'\n"; attributeLookupFailed = true; }
+  if (clock_location == -1) { std::cerr << "shader attribute-lookup failed for: 'clock'\n"; attributeLookupFailed = true; }
   if (attributeLookupFailed) { exit(4); }
   
+  glUniform1ui(clock_location, Clock);
   glGenVertexArrays(1, &gl_vertex_array); glBindVertexArray(gl_vertex_array);
   glGenBuffers(1,&vertex_buffer); glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
   
@@ -241,6 +256,9 @@ void RenderCylinder()
         glNamedBufferData(vertex_buffer, nVert*3, vertices, GL_DYNAMIC_DRAW);
         //glNamedBufferData(gl_vertex_array, sizeof(vertices), vertices, GL_DYNAMIC_DRAW);
         //glNamedBufferData(vertex_buffer, sizeof(vertices), vertices, GL_DYNAMIC_DRAW);
+        
+        // TODO: check that 'rgbified' shader is active
+        glUniform1ui(clock_location, Clock);
     #endif
     
     #ifdef RENDER_SPLINE_HACK
@@ -400,6 +418,7 @@ int main(int argc, char** argv)
     glutDisplayFunc((!useGlutFunction)?
     RenderCylinder:GlutRenderCylinder);
     glutReshapeFunc(Reshape);
+    UpdateClock(Clock);
     
     // 'glutenum' here should be one of the GLUT API macro definitions from freeglut_std.h
     // starting from 'GLUT_WINDOW_X' and ending with 'GLUT_WINDOW_FORMAT_ID'
