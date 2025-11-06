@@ -1,8 +1,6 @@
+#ifdef ENABLE_TORUS_FILES
 #include "Torus.hpp"
-
 //#include <iostream>
-
-
 
 
 void Torus_T::Create()
@@ -65,8 +63,6 @@ void Torus_T::Create()
 }
 
 
-
-
 glm::mat4 transform(glm::vec2 const& Orientation, glm::vec3 const& Translate, glm::vec3 const& Up)
 {
     glm::mat4 Proj = glm::perspective(glm::radians(45.f), 1.33f, 0.1f, 10.f);
@@ -76,3 +72,5 @@ glm::mat4 transform(glm::vec2 const& Orientation, glm::vec3 const& Translate, gl
     glm::mat4 Model = glm::mat4(1.0f);
     return Proj * View * Model;
 }
+
+#endif

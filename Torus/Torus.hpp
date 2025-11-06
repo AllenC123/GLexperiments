@@ -1,3 +1,4 @@
+#ifdef ENABLE_TORUS_FILES
 #ifndef TORUS_HPP_DEFINED
 #define TORUS_HPP_DEFINED
 
@@ -42,13 +43,5 @@ public:
     //void Render(const glm::mat4& vMat, const glm::mat4& pMat);
 };
 
-
-
-
-
-
-
-
-
-
+#endif
 #endif

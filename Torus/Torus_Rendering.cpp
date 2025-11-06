@@ -1,35 +1,95 @@
+//____________________________________________________________________________//
+// PROGRAM FLAGS
+//____________________________________________________________________________//
+
+// use the 'main' function in this file as program entry-point - single window
+// disable this define (and define in main.cpp instead) to get an ImGUI window
+//#define THIS_IS_MAIN_FILE
+
+// set the envvar 'GLUT_FPS' (which makes glut print FPS averages on std::cerr)
+// and also attempt to force vSync: '__GL_SYNC_TO_VBLANK=1' (nvidia GPUs only?)
+//#define ENVTEST
+// if the ENVTEST worked, you'll see periodic messages in the form of:
+//      "freeglut: 4552 frames in 1.00 seconds = 4547.45 FPS"
+
+// run the TORUS window in a seperate thread - only useful for testing
+//#define THREAD_TEST
+
+//____________________________________________________________________________//
+
 #include "Torus_Rendering.hpp"
+
+#include <cmath> // 'sin' and 'cos'
+#include <array>
+#include <vector>
+#include <cassert>
+#include <iostream>
 
 #include <GL/glut.h> //should just specify freeglut instead
 #include <GL/freeglut_ext.h> // required for glutSetOption (handling window-closing event properly)
 
-#include <cmath>             // for sin and cos
-#include <array>
-#include <iostream>
-#include <vector>
-#include <cassert> // only used for a single assert (isFirstCall in GenerateTorus)
-#include <thread>
-#include <cstdlib> // for std::getenv
+bool shouldStopRendering{false};
+bool shouldApplyRotation {true};
+float rotation_angle{0.000000f};
+float rotation_delta{default_rotation_delta};
+
+constexpr std::array<GLenum,10> RenderMethods {
+    GL_POINTS, GL_LINES, GL_LINE_LOOP, GL_LINE_STRIP,
+    GL_TRIANGLES, GL_TRIANGLE_STRIP, GL_TRIANGLE_FAN,
+    GL_QUADS, GL_QUAD_STRIP, GL_POLYGON,
+}; // 'GL_TRIANGLE_FAN' and 'GL_POLYGON' are both slow (and jank), but 'GL_POLYGON' seems a bit faster.
+
+bool shouldCycleRenderMethod{true};
+std::size_t currentmethod_index{3}; // "GL_LINE_STRIP"
+GLenum renderMethod{RenderMethods[currentmethod_index]};
+
+// [GLenum] GL_LINES --> "GL_LINES" [str]
+std::string RenderMethodName(GLenum RM) {
+  #define CASE(_E) case _E: {return #_E;}
+  switch (RM) {
+    CASE(GL_POINTS)
+    CASE(GL_LINES)
+    CASE(GL_LINE_LOOP)
+    CASE(GL_LINE_STRIP)
+    CASE(GL_TRIANGLES)
+    CASE(GL_TRIANGLE_STRIP)
+    CASE(GL_TRIANGLE_FAN)
+    CASE(GL_QUADS)
+    CASE(GL_QUAD_STRIP)
+    CASE(GL_POLYGON)
+    default: assert(false && "unreachable");
+    return "unreachable";
+    #undef CASE
+  }
+}
 
 
-// 'glutenum' here should be one of the GLUT API macro definitions from freeglut_std.h
-// starting from 'GLUT_WINDOW_X' and ending with 'GLUT_WINDOW_FORMAT_ID'
-#define PRINTGLUT(glutenum) std::cout << #glutenum <<" = " << glutGet(glutenum) << '\n';
+void UpdateRenderMethod()
+{
+    if (!shouldCycleRenderMethod) return;
+    bool positive{(rotation_angle >= 0)};
+    if ((rotation_angle <= 360.f) && (rotation_angle >= -360.f)) return;
+    rotation_angle = (positive? -360.f : 360.0f); // resetting rotation - NOT to zero - that's a half-rotation off (same position as 360 but flipped)
+    assert(positive == (rotation_delta >= 0.0f)); // the logic above is only correct provided that rotation_delta determines which bound is exceeded (+-360); otherwise an infinite loop may occur
+    
+    if ((!positive) && (currentmethod_index == 0))
+    currentmethod_index = (RenderMethods.size()-1);
+    else currentmethod_index += (positive? 1 : -1);
+    
+    if (currentmethod_index >= RenderMethods.size())
+        currentmethod_index = 0;
+    
+    renderMethod = RenderMethods[currentmethod_index];
+    #ifdef THIS_IS_MAIN_FILE // ImGui window displays renderMethod name/info
+    std::cout << "renderMethod: " << RenderMethodName(renderMethod) << '\n';
+    #endif
+}
 
-
-float rotation_angle {0};
-float rotation_delta {rotation_delta_default};
-bool ShouldStopRendering {false};
-
-int index_total{0};
-
-constexpr std::array<GLenum, 9> rendermethods { GL_POINTS, GL_LINES, GL_LINE_LOOP, GL_LINE_STRIP, GL_QUADS, GL_TRIANGLE_STRIP, GL_TRIANGLE_FAN, GL_QUAD_STRIP, GL_POLYGON};
-//TRIANGLE_FAN and GL_POLYGON are both slow, but POLYGON seems a bit faster.
-GLenum cyclemethod {GL_LINE_STRIP};
-bool shouldCycleRendermethods {true};
 
 #define PRECALCULATE_TORUS_GEOMETRY
 #ifdef PRECALCULATE_TORUS_GEOMETRY
+
+int index_total{0};
 
 struct point_t
 {
@@ -88,6 +148,8 @@ std::vector<precalc_colorcycle_t> colortable{};
 Torus_t& GenerateTorus()
 {
     static Torus_t result{}; // storedpoint in precalc_colorcycle_t cannot be a reference unless this is static
+    static bool isFirstCall{true}; assert(isFirstCall);
+    if (!isFirstCall) return result;
     colortable.clear(); // not necessary
 
     for (int strip = 0; strip < numStrips; ++strip)
@@ -115,8 +177,6 @@ Torus_t& GenerateTorus()
     }
 
     std::cout << "Torus Generated with: " << index_total << " verticies." << std::endl;
-    static bool isFirstCall{true};
-    assert(isFirstCall);
     isFirstCall = false;
 
     return result;
@@ -127,8 +187,8 @@ const Torus_t& Torus = GenerateTorus();
 void DrawPregenTorus()
 {
     // modulus is undefined for negative values (segfaults)
-    const int current_degree = int((rotation_angle > 0)? rotation_angle:-rotation_angle) % 360;
-    glBegin(cyclemethod);
+    const int current_degree = int((rotation_angle >= 0)? rotation_angle:-rotation_angle) % 360;
+    glBegin(renderMethod);
 
     // iterates through Torus arrays (old method)
 /*     for (const m_rings& R : Torus)
@@ -186,7 +246,7 @@ void DrawPregenTorus()
 #ifndef PRECALCULATE_TORUS_GEOMETRY
 void drawTorus()
 {
-    glBegin(cyclemethod);
+    glBegin(renderMethod);
 
     for (int strip = 0; strip < numStrips; ++strip)
     {
@@ -214,28 +274,10 @@ void display()
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glLoadIdentity(); // replaces current matrix with identity (default) matrix
-
-    if (shouldCycleRendermethods)
-    {
-        // modulus is undefined for negative values (segfaults)
-        const int currentmethod_index = int(((rotation_angle > 0)? rotation_angle:-rotation_angle) / 360) % 9;
-        if (cyclemethod != rendermethods[currentmethod_index])
-        {
-            cyclemethod = rendermethods[currentmethod_index];
-            std::cout << "rendermethod: " << currentmethod_index << std::endl;
-
-            // speed up rotation to compensate FPS-drops on certain rendermethods
-            //rotation_delta = (((currentmethod_index == 6) || (currentmethod_index == 8))? rotation_delta_default * 3.0 : rotation_delta_default);
-        }
-    }
-
-    rotation_angle += rotation_delta;
-
     glTranslatef(0.0f, 0.0f, -5.0f); // z-coord must be negative to be in front of camera
     glRotatef(rotation_angle, 1.0f, 1.2f, 1.0f);
     glRotatef(rotation_angle, 0.0f, 0.0f, 1.0f);
     
-
     //glRotatef(rotation_angle, 0.0f, 1.0f, 0.0f);
     //glRotatef(rotation_angle, 1.0f, 0.0f, 0.0f);
     // glRotatef(rotation_angle, 0.0f, 0.0f, 0.0f); // very strange; it flips and shrinks back and forth
@@ -263,31 +305,6 @@ void display()
 }
 
 
-void idle()
-{
-    if (ShouldStopRendering)
-    {
-        glutLeaveMainLoop();
-        return;
-    }
-    
-    // # define TILT_INSTEAD // tilt back and forth instead of spinning
-    #ifdef TILT_INSTEAD
-    if (rotation_angle >= 360.0f)
-    {
-        rotation_delta = -0.01f;
-    }
-    
-    else if (rotation_angle <= 0.0f)
-    {
-        rotation_delta = 0.015f;
-    }
-    #endif // TILT INSTEAD
-    
-    //PRINTGLUT(GLUT_ELAPSED_TIME);  // super spam
-    return;
-}
-
 // the function signature requires parameters to be integers,
 // otherwise we'd pass them as doubles to avoid recasting in 'gluPerspective'
 void reshape(int width, int height)
@@ -297,6 +314,28 @@ void reshape(int width, int height)
     glLoadIdentity();
     gluPerspective(36.0, static_cast<double>(width) / height, 1.0, 10.0);
     glMatrixMode(GL_MODELVIEW); // this can go in 'display' function instead
+}
+
+
+// 'glutenum' here should be one of the GLUT API macro definitions from freeglut_std.h
+// starting from 'GLUT_WINDOW_X' and ending with 'GLUT_WINDOW_FORMAT_ID'
+#define PRINTGLUT(glutenum) std::cout << #glutenum <<" = " << glutGet(glutenum) << '\n';
+
+void idle()
+{
+    if (shouldStopRendering)
+    {
+        glutLeaveMainLoop();
+        return;
+    }
+    
+    if (shouldApplyRotation) {
+        rotation_angle += rotation_delta;
+        UpdateRenderMethod();
+    }
+    
+    //PRINTGLUT(GLUT_ELAPSED_TIME);  // super spam
+    return;
 }
 
 // moved from the main function so that it can be executed in another thread
@@ -332,16 +371,19 @@ void GlutStuff(int argc, char** argv)
     
     // mainloop must be called in the same thread / (function?) as the glutInit (and glutCreateWindow?) calls.
     glutMainLoop(); // by default, never returns - terminates the program when window closes.
-    ShouldStopRendering = true; // indicates that the window has already been closed
-    std::cout << "rejoined main thread \n";
+    shouldStopRendering = true; // indicates that the window has already been closed
     return;
 }
 
 
-// Uses code taken directly from freeglut (fg_init.c) to ensure cmdline args are getting matched
-// because it seems to be ignoring them
+//#define TESTCMDLINEPARSING // Simulates the parsing behavior of 'glutInit()' (without any actual effect)
 #ifdef TESTCMDLINEPARSING
 #include <string.h> //strcmp
+#include <cstdlib> // std::getenv
+
+// checking the cmdline args for vsync and debug flags ('-sync' and '-gldebug'), which eventually get passed into 'glutInit()' (theoretically)
+// Uses code taken directly from freeglut (fg_init.c) to ensure cmdline args are getting matched
+// because it seems to be ignoring them
 bool TestCmdlineParsing(int argc, char** argv) 
 {
     bool found_sync_arg = false;
@@ -372,19 +414,22 @@ bool TestCmdlineParsing(int argc, char** argv)
 }
 #endif
 
-// This version of main launches only the Torus Window in a seperate thread
-//#define THIS_IS_MAIN_FILE // undefine (define in main.cpp) for ImGUI window
+
 #ifdef THIS_IS_MAIN_FILE
-int main(int argc, char** argv, char** envp) {
+#ifdef THREAD_TEST
+#include <thread>
+#endif
+// This version of main only runs the Torus window
+int main(int argc, char** argv, char** envp [[maybe_unused]])
+{
     #ifdef TESTCMDLINEPARSING
     bool argsfound = TestCmdlineParsing(argc, argv);
     if (!argsfound) {
-        std::cout << "ragequitting because syncarg was not found!\n";
+        std::cout << "ragequitting because 'sync' arg was not found!\n";
         return 1;
     }
     #endif
     
-    #define ENVTEST // try to set the envvar 'GLUT_FPS' (makes glut print FPS averages on std::cerr)
     #ifdef ENVTEST
     std::cout << "argc = " << argc << '\n';
     std::cout << "&argv = " << argv << '\n';
@@ -476,24 +521,24 @@ int main(int argc, char** argv, char** envp) {
     // if the ENVTEST worked, you'll see periodic messages in the form of:
     // "freeglut: 4552 frames in 1.00 seconds = 4547.45 FPS"
     
-    GlutStuff(argc, argv);
+    #ifdef THREAD_TEST
     std::jthread testThread{GlutStuff, argc, argv};
-    
     std::cout << "glut thread launched!\n";
-    
     std::cout << "main  thread_id:" << std::this_thread::get_id() << '\n';
     std::cout << "torus thread_id:" << testThread.get_id() << '\n';
     std::cout << std::boolalpha << "    joinable: " << testThread.joinable() << '\n';
-
-    /* while (testThread.joinable() && !ShouldStopRendering) {
+    
+    /* while (testThread.joinable() && !shouldStopRendering) {
         std::cout << "sleep \n";
         sleep(1);
     } */
-
+    
     testThread.join();
-
+    std::cout << "rejoined main thread \n";
     std::cout << "main thread finished \n";
-
+    #else
+    GlutStuff(argc, argv);
+    #endif
     return 0;
 }
 #endif
