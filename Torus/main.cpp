@@ -21,15 +21,35 @@ static void glfw_error_callback(int error, const char* description) {
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
 }
 
+// apparently numpad keys have different 'key' values
+void KeypressCallback(GLFWwindow* window, int key, int /*scancode*/, int action, int /*mods*/)
+{
+  // 'action' 1: keypress, 0: keyrelease
+  if(!action) return;
+  switch(key) {
+    case 'Q': case 'q':
+    glfwSetWindowShouldClose(window, 1);
+      shouldStopRendering = true; break;
+    case '0': SetRenderMethod(0); break;
+    case '1': SetRenderMethod(1); break;
+    case '2': SetRenderMethod(2); break;
+    case '3': SetRenderMethod(3); break;
+    case '4': SetRenderMethod(4); break;
+    case '5': SetRenderMethod(5); break;
+    case '6': SetRenderMethod(6); break;
+    case '7': SetRenderMethod(7); break;
+    case '8': SetRenderMethod(8); break;
+    case '9': SetRenderMethod(9); break;
+    case '-': NextRenderMethod(false); break;
+    case '=': NextRenderMethod(true ); break;
+    default : break;
+  }
+}
+// TODO: apply keybinds to TORUS window. also handle numpad
 
 int main(int argc, char** argv, char** envp [[maybe_unused]])
 {
     bool isVsync{true}; // This only controls the vsync of the imgui window - not the TORUS window
-    
-    //from 'Torus.hpp'
-    //Torus_T Torus{};
-    //Torus.Create();
-    
     assert(IMGUI_CHECKVERSION() && "ImGui version-check failed!");
     std::cout << "using imgui v" << IMGUI_VERSION << '\n';
     
@@ -57,10 +77,26 @@ int main(int argc, char** argv, char** envp [[maybe_unused]])
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
     
-    GLFWwindow* window = glfwCreateWindow(400, 240, "Torus_GUI", nullptr, nullptr);
-    if (window == nullptr) return 1;
+    //from 'Torus.hpp'
+    //Torus_T Torus{};
+    //Torus.Create();
+    
+    std::jthread glutThread{GlutStuff, argc, argv};
+    std::cout << "glut thread launched!\n";
+    
+    // create this window AFTER launching GLUT thread so the GUI is stacked on top
+    GLFWwindow* window = glfwCreateWindow(450, 300, "Torus_GUI", nullptr, nullptr);
+    if (window == nullptr) { shouldStopRendering=true; glutThread.join(); return 1; }
+    glfwSetKeyCallback(window, KeypressCallback);
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1); // Enable vsync
+    
+    std::cout <<
+    "\nKeybinds:\n" <<
+    "    Q: exit\n" <<
+    "  -/+: prev/next render-method\n" <<
+    "[0-9]: switch to render-method\n" <<
+    "\n";
     
     ImGui::CreateContext();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
@@ -70,7 +106,7 @@ int main(int argc, char** argv, char** envp [[maybe_unused]])
     imguiIO.IniFilename = NULL; // disable autosaving of the 'imgui.ini' config file (just stores window states)
     imguiIO.ConfigWindowsMoveFromTitleBarOnly = true;
     imguiIO.ConfigWindowsResizeFromEdges = false;
-    imguiIO.WantCaptureMouse = false;
+    //imguiIO.WantCaptureMouse = false;
     // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
     // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application, or clear/overwrite your copy of the mouse data.
     // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main application, or clear/overwrite your copy of the keyboard data.
@@ -89,10 +125,8 @@ int main(int argc, char** argv, char** envp [[maybe_unused]])
     };
     
     ImGui::StyleColorsDark();
-    ImVec4 clear_color = ImVec4(0.25f, 0.25f, 0.25f, 1.0f);
-    
-    std::jthread glutThread{GlutStuff, argc, argv};
-    std::cout << "glut thread launched!\n";
+    ImVec4 clear_color{0.25f, 0.25f, 0.25f, 1.0f};
+    const ImVec4 currentMethodColor {0.25f, 0.5f, 1.f, 1.f}; // renderMethod button color (highlighted)
     
     while (!glfwWindowShouldClose(window))
     {
@@ -119,8 +153,18 @@ int main(int argc, char** argv, char** envp [[maybe_unused]])
         ImGui::Separator();
         
         ImGui::Separator();
-        ImGui::Text("RenderMethod: %s", (RenderMethodName(renderMethod).c_str()));
-        ImGui::Text("Auto-Cycling: %sabled",(shouldCycleRenderMethod?"en":"dis"));
+        ImGui::Text("RenderMethod: %s (%lu)", RenderMethodName().c_str(), renderMethodIndex);
+        ImGui::Text("Auto-Cycling:"); ImGui::SameLine();
+        if (ImGui::Button((shouldCycleRenderMethod? "enabled##cycling": "disabled##cycling"))) shouldCycleRenderMethod = !shouldCycleRenderMethod;
+        if (ImGui::Button("prev")){ NextRenderMethod(false); shouldCycleRenderMethod = true; } ImGui::SameLine();
+        if (ImGui::Button("next")){ NextRenderMethod(true ); shouldCycleRenderMethod = true; } ImGui::SameLine();
+        for (std::size_t RM{0}; RM < 10;) { bool isActive{(RM == renderMethodIndex)};
+            if (isActive) ImGui::PushStyleColor(ImGuiCol_Button, currentMethodColor);
+            if (ImGui::Button(std::string{char(48+RM)}.c_str())) SetRenderMethod(RM);
+            if (isActive){ImGui::PopStyleColor();} if(++RM < 10) ImGui::SameLine();
+            //if (ImGui::Button(RenderMethodName(GetRenderMethod(RM)).substr(3).c_str())) SetRenderMethod(RM);
+            //if ((++RM % 5) != 0) ImGui::SameLine();
+        }
         ImGui::Separator();
         
         if (ImGui::SliderFloat("rotation angle", &rotation_angle, -360.f, 360.f,

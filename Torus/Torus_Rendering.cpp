@@ -40,8 +40,8 @@ constexpr std::array<GLenum,10> RenderMethods {
 }; // 'GL_TRIANGLE_FAN' and 'GL_POLYGON' are both slow (and jank), but 'GL_POLYGON' seems a bit faster.
 
 bool shouldCycleRenderMethod{true};
-std::size_t currentmethod_index{3}; // "GL_LINE_STRIP"
-GLenum renderMethod{RenderMethods[currentmethod_index]};
+std::size_t renderMethodIndex{ 3 }; // GL_LINE_STRIP
+GLenum renderMethod{RenderMethods[renderMethodIndex]};
 
 // [GLenum] GL_LINES --> "GL_LINES" [str]
 std::string RenderMethodName(GLenum RM) {
@@ -63,23 +63,35 @@ std::string RenderMethodName(GLenum RM) {
   }
 }
 
+std::string RenderMethodName(){ return RenderMethodName(renderMethod); }
+GLenum GetRenderMethod(std::size_t I) { return RenderMethods[I]; }
+GLenum SetRenderMethod(std::size_t I) {
+    shouldCycleRenderMethod = false;
+    renderMethod = RenderMethods[I];
+    renderMethodIndex=I;
+    return renderMethod;
+}
+
+void NextRenderMethod(bool positive) {
+    if ((!positive) && (renderMethodIndex == 0))
+    renderMethodIndex = (RenderMethods.size()-1);
+    else renderMethodIndex += (positive? 1 : -1);
+    
+    if (renderMethodIndex >= RenderMethods.size())
+        renderMethodIndex = 0;
+    
+    renderMethod = RenderMethods[renderMethodIndex];
+}
 
 void UpdateRenderMethod()
 {
-    if (!shouldCycleRenderMethod) return;
     bool positive{(rotation_angle >= 0)};
     if ((rotation_angle <= 360.f) && (rotation_angle >= -360.f)) return;
     rotation_angle = (positive? -360.f : 360.0f); // resetting rotation - NOT to zero - that's a half-rotation off (same position as 360 but flipped)
     assert(positive == (rotation_delta >= 0.0f)); // the logic above is only correct provided that rotation_delta determines which bound is exceeded (+-360); otherwise an infinite loop may occur
+    if (!shouldCycleRenderMethod) return;
     
-    if ((!positive) && (currentmethod_index == 0))
-    currentmethod_index = (RenderMethods.size()-1);
-    else currentmethod_index += (positive? 1 : -1);
-    
-    if (currentmethod_index >= RenderMethods.size())
-        currentmethod_index = 0;
-    
-    renderMethod = RenderMethods[currentmethod_index];
+    NextRenderMethod(positive);
     #ifdef THIS_IS_MAIN_FILE // ImGui window displays renderMethod name/info
     std::cout << "renderMethod: " << RenderMethodName(renderMethod) << '\n';
     #endif

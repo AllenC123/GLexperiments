@@ -18,8 +18,12 @@ extern float rotation_angle;
 extern float rotation_delta;
 
 typedef unsigned int GLenum; // gl.h
-extern  GLenum renderMethod;
+std::string RenderMethodName(); // current
 std::string RenderMethodName(GLenum);
+GLenum GetRenderMethod(std::size_t I); // index
+GLenum SetRenderMethod(std::size_t I); // index
+void NextRenderMethod(bool direction); // true/false --> next/prev
+extern std::size_t renderMethodIndex;
 extern bool shouldCycleRenderMethod;
 extern bool shouldApplyRotation;
 extern bool shouldStopRendering;
