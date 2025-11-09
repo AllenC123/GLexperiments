@@ -4,6 +4,7 @@
 
 // initializes torus-rendering window
 void GlutStuff(int argc, char** argv);
+extern bool TORUS_VSYNC;
 
 constexpr float PI = 3.14159265358979323846; // should use built-in constant instead
 constexpr int numStrips = 32;

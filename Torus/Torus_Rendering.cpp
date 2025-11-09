@@ -28,6 +28,10 @@
 #include <GL/glut.h> //should just specify freeglut instead
 #include <GL/freeglut_ext.h> // required for glutSetOption (handling window-closing event properly)
 
+int TORUS_WINDOW_ID{0};
+bool TORUS_VSYNC{true};
+bool vsync_initial{TORUS_VSYNC};
+
 bool shouldStopRendering{false};
 bool shouldApplyRotation {true};
 float rotation_angle{0.000000f};
@@ -335,8 +339,7 @@ void reshape(int width, int height)
 
 void idle()
 {
-    if (shouldStopRendering)
-    {
+    if (shouldStopRendering || (vsync_initial != TORUS_VSYNC)) {
         glutLeaveMainLoop();
         return;
     }
@@ -350,25 +353,87 @@ void idle()
     return;
 }
 
+
+void PrintArgs(const int argc, char** argv) {
+    std::cout << "argc: " << argc << '\n';
+    for (int I{0}; I<argc; ++I) {
+        std::cout << "arg[#" << I << "] = ";
+        if (!argv[I]) std::cout << "[NULL]";
+        else std::cout << '"'<<argv[I]<<'"';
+        std::cout << '\n';
+    } std::cout << '\n';
+}
+
+// GLUT doesn't actually provide any mechanism for toggling double-buffering of an existing window
+// so it's necessary to destroy the current window and then recreate it with a new glutDisplayMode
+void GlutToggleVsync(int argc, char** argv)
+{
+    const bool vSync{ TORUS_VSYNC };
+  //unsigned int newMode{((vSync? GLUT_DOUBLE:0U) | GLUT_RGBA | GLUT_DEPTH)};
+    std::cout << "\nGlutToggleVsync: " << (vSync? "enabled\n": "disabled\n");
+    glutInitWindowPosition(2560, 0);
+    glutInitWindowSize(960, 960);
+    PrintArgs(argc, argv);
+    glutInit(&argc, argv);
+    
+    // no need to destroy old window - already destroyed by 'glutLeaveMainLoop'?
+    // destroying it either terminates the program, or gives an error:
+    // "Function <glutDestroyWindow> called without first calling 'glutInit'"
+    //int OLD_WINDOW_ID = TORUS_WINDOW_ID;
+    //glutDestroyWindow(OLD_WINDOW_ID);
+    
+  //glutSetOption(GLUT_INIT_DISPLAY_MODE, newMode);
+    glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_CONTINUE_EXECUTION);
+    glutInitDisplayMode((TORUS_VSYNC?GLUT_DOUBLE:0U) | GLUT_RGBA | GLUT_DEPTH);
+    TORUS_WINDOW_ID = glutCreateWindow((TORUS_VSYNC? "TORUS [vSync]":"TORUS"));
+    //glutPushWindow(); // lowers window in stacking order (NEVER USE HERE!!!)
+    //glutSetWindow(TORUS_WINDOW_ID);
+    
+    glEnable(GL_DEPTH_TEST); // disabling this creates an interesting effect
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    
+    // these all need to be set again for the new window
+    glutDisplayFunc(display);
+    glutReshapeFunc(reshape);
+    glutIdleFunc(idle);
+    return;
+}
+
 // moved from the main function so that it can be executed in another thread
 void GlutStuff(int argc, char** argv)
 {
+    // window parameters from commandline:
+    //"./TORUS -geometry 1080x1080+1920+0"
+    std::cout << "\nGlutStuff\n";
+    PrintArgs(argc, argv);
+    
+    // must create copies to preserve the original commandline, to ensure that any
+    // specified window/display parameters are applied on each call to 'glutInit()'
+    // otherwise cmdline parameters only work once, because 'glutInit' erases them
+    static int saved_argc = argc;
+    char* saved_argv[saved_argc]; // "Warning: ISO C++ forbids variable length array ‘saved_argv’"
+    for (int I{0}; I<argc; ++I) {
+        saved_argv[I] = argv[I];
+    } //saved_argv[I] = *(new char*{argv[I]}); // still crashes!?
+    // still randomly crashes sometimes with 'BadRequest' X-Error; always Major/Minor opcode 138/5
+    // I'm guessing the random crashes happen because 'argv' has pointers belonging to main thread
+    
     // "depth testing (GL_LESS) should be enabled for correct drawing of the nonconvex objects, i.e. the glutTorus..."
     // https://freeglut.sourceforge.net/docs/api.php#GeometricObject
-    
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH);
+    glutInitDisplayMode((TORUS_VSYNC? GLUT_DOUBLE:0U) | GLUT_RGBA | GLUT_DEPTH);
+    glutInitWindowPosition(2560, 0);
     glutInitWindowSize(960, 960);
     glutInit(&argc, argv); // all 'glutInit' functions must be called BEFORE this call?
     // some options to glutInit include: '-gldebug', '-sync' (neither of which seems to be working?)
     
     // must be called after glutInit
-    glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_CONTINUE_EXECUTION); // prevents glut from terminating the entire program when it's window is closed
     //glutSetOption(GLUT_GEOMETRY_VISUALIZE_NORMALS, true); //only affects glut's built-in object-rendering functions (glutTorus)
-    glutCreateWindow("Torus");
-
+    glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_CONTINUE_EXECUTION); // prevents glut from terminating the entire program when it's window is closed
+    TORUS_WINDOW_ID = glutCreateWindow((TORUS_VSYNC? "TORUS [vSync]":"TORUS"));
+    
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glEnable(GL_DEPTH_TEST);
-
+    
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
     glutIdleFunc(idle);
@@ -379,10 +444,24 @@ void GlutStuff(int argc, char** argv)
     //from the nvidia-settings profiles, the flag name for vsync is: GLSyncToVblank;
     //in fg_init.c, it's the 'XSyncSwitch' member (GLboolean) of the 'fgState' struct
     
+    PRINTGLUT(GLUT_VERSION);
+    PRINTGLUT(GLUT_INIT_MAJOR_VERSION);
+    PRINTGLUT(GLUT_INIT_MINOR_VERSION);
+    PRINTGLUT(GLUT_INIT_FLAGS);
+    PRINTGLUT(GLUT_INIT_PROFILE);
     PRINTGLUT(GLUT_INIT_DISPLAY_MODE);
+    
+    //glutPushWindow(); // lowers window in stacking order
     
     // mainloop must be called in the same thread / (function?) as the glutInit (and glutCreateWindow?) calls.
     glutMainLoop(); // by default, never returns - terminates the program when window closes.
+    while ((!shouldStopRendering) && (vsync_initial != TORUS_VSYNC)) {
+        argc = saved_argc; // restoring initial args before 'glutInit'
+        for (int I{0}; I<argc; ++I) { argv[I] = saved_argv[I]; }
+        GlutToggleVsync(argc, argv);
+        vsync_initial = TORUS_VSYNC;
+        glutMainLoop();
+    }
     shouldStopRendering = true; // indicates that the window has already been closed
     return;
 }

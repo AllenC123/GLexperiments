@@ -16,6 +16,7 @@
 #include "Torus.hpp" // unused
 #endif
 
+bool isVsync{TORUS_VSYNC};
 
 static void glfw_error_callback(int error, const char* description) {
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
@@ -42,6 +43,9 @@ void KeypressCallback(GLFWwindow* window, int key, int /*scancode*/, int action,
     case '9': SetRenderMethod(9); break;
     case '-': NextRenderMethod(false); break;
     case '=': NextRenderMethod(true ); break;
+    case 'V': case 'v':
+        TORUS_VSYNC = isVsync = !isVsync;
+        glfwSwapInterval(isVsync); break;
     default : break;
   }
 }
@@ -49,7 +53,6 @@ void KeypressCallback(GLFWwindow* window, int key, int /*scancode*/, int action,
 
 int main(int argc, char** argv, char** envp [[maybe_unused]])
 {
-    bool isVsync{true}; // This only controls the vsync of the imgui window - not the TORUS window
     assert(IMGUI_CHECKVERSION() && "ImGui version-check failed!");
     std::cout << "using imgui v" << IMGUI_VERSION << '\n';
     
@@ -89,11 +92,12 @@ int main(int argc, char** argv, char** envp [[maybe_unused]])
     if (window == nullptr) { shouldStopRendering=true; glutThread.join(); return 1; }
     glfwSetKeyCallback(window, KeypressCallback);
     glfwMakeContextCurrent(window);
-    glfwSwapInterval(1); // Enable vsync
+    glfwSwapInterval(isVsync);
     
     std::cout <<
     "\nKeybinds:\n" <<
     "    Q: exit\n" <<
+    "    V: toggle vSync\n" <<
     "  -/+: prev/next render-method\n" <<
     "[0-9]: switch to render-method\n" <<
     "\n";
@@ -144,7 +148,7 @@ int main(int argc, char** argv, char** envp [[maybe_unused]])
         ImGui::SetWindowPos({0,0}); ImGui::SetWindowSize({-1,-1}); // these are actually necessary (WTF imgui?)
         
         ImGui::Text("%8.1f FPS [%.3f ms/frame]", imguiIO.Framerate, 1000.f/imguiIO.Framerate);
-        if (ImGui::Button("Vsync Toggle")) { isVsync = !isVsync; glfwSwapInterval(isVsync); }
+        if (ImGui::Button("Vsync Toggle")) { TORUS_VSYNC = isVsync = !isVsync; glfwSwapInterval(isVsync); }
         ImGui::SameLine(); ImGui::Text("Vsync: %s", (isVsync? "enabled" : "disabled"));
         ImGui::Separator();
         
